@@ -1,9 +1,9 @@
 {
-  "name": "Powerwall Combined Bridge",
-  "content_in_root": false,
-  "domains": [
-    "powerwall_combined_bridge"
-  ],
-  "homeassistant": "2026.9.0",
-  "render_readme": true
+    "name": "Powerwall Combined Bridge",
+    "content_in_root": false,
+    "domains": [
+        "powerwall_combined_bridge"
+    ],
+    "homeassistant": "2026.9.0",
+    "render_readme": true
 }
