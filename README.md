@@ -18,9 +18,9 @@ Current implementation path:
 
 1. Install and run the `Powerwall Combined Bridge` add-on.
 2. The add-on installs or updates the bundled custom integration into Home Assistant's `custom_components` directory automatically.
-3. Restart Home Assistant Core once after first install, or after any add-on update that changes the integration files.
-4. In Home Assistant, go to Devices & Services and add `Powerwall Combined Bridge`.
-5. Enter the bridge URL, for example `http://homeassistant.local:8676/status` or your HA host IP on port `8676`.
+3. If the integration files changed, the add-on restarts Home Assistant Core automatically so the new custom component can load.
+4. The add-on then attempts to create the `Powerwall Combined Bridge` config entry automatically.
+5. If automatic setup does not complete, add the integration manually in Devices & Services and point it at the bridge URL.
 
 This is the first pass of the native integration. The add-on remains the data collection layer; the custom integration consumes that local JSON and turns it into real entities.
 
@@ -78,6 +78,12 @@ The add-on is preconfigured for:
 - Shelly grid meter: `http://192.168.1.177`
 
 You can change any of those in the add-on options UI.
+
+## Expected Entities
+
+If Home Assistant only shows CPU, memory, or other add-on diagnostics, that means you are only seeing Supervisor's add-on monitoring entities.
+
+The actual Powerwall entities come from the bundled custom integration and should appear under the `Powerwall Combined Bridge` integration entry in Devices & Services. Those include combined power totals, per-site battery and power values, and optional Shelly phase power.
 
 ## Repo Notes
 

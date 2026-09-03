@@ -60,13 +60,17 @@ This add-on now ships with a native Home Assistant custom integration payload an
 
 That means you do not need to manually copy integration files into HAOS.
 
-After first install, or after an add-on update that changes the integration files, restart Home Assistant Core once so it loads the updated custom component.
+If the bundled integration files changed, the add-on restarts Home Assistant Core automatically so it can load the updated custom component.
+
+After that, the add-on attempts to create the `Powerwall Combined Bridge` integration entry automatically.
 
 Then in Home Assistant:
 
 1. Open Devices & Services.
-2. Add `Powerwall Combined Bridge`.
-3. Enter the bridge URL, usually `http://homeassistant.local:8676/status` or your HA host IP on port `8676`.
+2. Confirm `Powerwall Combined Bridge` exists as an integration entry.
+3. If it was not created automatically, add it manually and enter the bridge URL, usually `http://homeassistant.local:8676/status` or your HA host IP on port `8676`.
+
+If you only see CPU and memory entities, those are Supervisor add-on diagnostics. The actual Powerwall entities come from the bundled custom integration entry, not from the add-on device card itself.
 
 The older YAML path is still available if you want it. The example package remains in:
 
