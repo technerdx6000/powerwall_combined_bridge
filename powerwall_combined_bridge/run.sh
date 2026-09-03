@@ -2,6 +2,13 @@
 
 set -euo pipefail
 
+bashio::log.info "Installing Home Assistant custom integration payload"
+install_output=$(python3 /opt/powerwall/install_homeassistant_custom_component.py)
+bashio::log.info "$install_output"
+if [[ "$install_output" == Installed* ]]; then
+  bashio::log.warning "Custom integration files changed. Restart Home Assistant Core once to load the updated integration."
+fi
+
 bashio::log.info "Rendering Powerwall bridge configuration"
 python3 /opt/powerwall/render_addon_config.py \
   --options /data/options.json \

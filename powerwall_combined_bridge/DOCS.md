@@ -56,7 +56,19 @@ The combined `totals.grid_w` value will then come from the Shelly `total_act_pow
 
 ## Home Assistant integration
 
-Use the generated bridge endpoint with the REST and Template configuration in:
+This add-on now ships with a native Home Assistant custom integration payload and installs it into Home Assistant's `custom_components` directory automatically on add-on startup.
+
+That means you do not need to manually copy integration files into HAOS.
+
+After first install, or after an add-on update that changes the integration files, restart Home Assistant Core once so it loads the updated custom component.
+
+Then in Home Assistant:
+
+1. Open Devices & Services.
+2. Add `Powerwall Combined Bridge`.
+3. Enter the bridge URL, usually `http://homeassistant.local:8676/status` or your HA host IP on port `8676`.
+
+The older YAML path is still available if you want it. The example package remains in:
 
 - `home_assistant_rest_package.yaml`
 

@@ -16,13 +16,15 @@ The custom integration polls the bridge endpoint and creates native Home Assista
 
 Current implementation path:
 
-1. Run the `Powerwall Combined Bridge` add-on so the JSON endpoint is available.
-2. Copy `custom_components/powerwall_combined_bridge/` into your Home Assistant config directory under `custom_components/`.
-3. Restart Home Assistant.
+1. Install and run the `Powerwall Combined Bridge` add-on.
+2. The add-on installs or updates the bundled custom integration into Home Assistant's `custom_components` directory automatically.
+3. Restart Home Assistant Core once after first install, or after any add-on update that changes the integration files.
 4. In Home Assistant, go to Devices & Services and add `Powerwall Combined Bridge`.
 5. Enter the bridge URL, for example `http://homeassistant.local:8676/status` or your HA host IP on port `8676`.
 
 This is the first pass of the native integration. The add-on remains the data collection layer; the custom integration consumes that local JSON and turns it into real entities.
+
+If you do not want to use the native integration yet, the YAML package path still exists in `home_assistant_rest_package.yaml`.
 
 ## Recommended Path
 

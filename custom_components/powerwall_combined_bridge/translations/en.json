@@ -44,6 +44,9 @@
     },
     "entity": {
         "sensor": {
+            "bridge_error_count": {
+                "name": "Bridge Error Count"
+            },
             "combined_solar_power": {
                 "name": "Combined Solar Power"
             },
@@ -67,6 +70,9 @@
             },
             "snapshot_generated_at": {
                 "name": "Snapshot Generated At"
+            },
+            "bridge_error": {
+                "name": "Bridge Error"
             },
             "battery_level_percent": {
                 "name": "Battery Level"

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import threading
 import time
@@ -203,6 +204,103 @@ def combine_snapshot(config: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def format_metric(value: Any, unit: str = "") -> str:
+        if value is None:
+                return "Unavailable"
+        if isinstance(value, float):
+                text = f"{value:.1f}" if not value.is_integer() else f"{int(value)}"
+        else:
+                text = str(value)
+        return f"{text} {unit}".strip()
+
+
+def build_status_page(snapshot: dict[str, Any]) -> str:
+        totals = snapshot.get("totals") or {}
+        sites = snapshot.get("sites") or {}
+        errors = snapshot.get("errors") or {}
+        cards = [
+                ("Solar", format_metric(totals.get("solar_w"), "W")),
+                ("Home", format_metric(totals.get("home_w"), "W")),
+                ("Battery", format_metric(totals.get("battery_w"), "W")),
+                ("Grid", format_metric(totals.get("grid_w"), "W")),
+                ("Grid Source", format_metric(totals.get("grid_source"))),
+                ("Updated", format_metric(snapshot.get("generated_at"))),
+        ]
+        card_html = "".join(
+                f"<section class='card'><h2>{html.escape(label)}</h2><p>{html.escape(value)}</p></section>" for label, value in cards
+        )
+
+        rows = []
+        for site_key, site in sites.items():
+                site = site or {}
+                current = site.get("current_power_w") or {}
+                rows.append(
+                        "<tr>"
+                        f"<td>{html.escape(site.get('site_name') or site_key)}</td>"
+                        f"<td>{html.escape(format_metric(current.get('SOLAR'), 'W'))}</td>"
+                        f"<td>{html.escape(format_metric(current.get('LOAD'), 'W'))}</td>"
+                        f"<td>{html.escape(format_metric(current.get('BATTERY'), 'W'))}</td>"
+                        f"<td>{html.escape(format_metric(site.get('battery_level_percent'), '%'))}</td>"
+                        f"<td>{html.escape(format_metric(site.get('grid_status')))}</td>"
+                        "</tr>"
+                )
+        rows_html = "".join(rows) or "<tr><td colspan='6'>No site data available</td></tr>"
+
+        error_items = "".join(
+                f"<li><strong>{html.escape(name)}:</strong> {html.escape(message)}</li>" for name, message in errors.items()
+        )
+        errors_html = f"<ul>{error_items}</ul>" if error_items else "<p>No active bridge errors.</p>"
+
+        return f"""<!DOCTYPE html>
+<html lang='en'>
+<head>
+    <meta charset='utf-8'>
+    <meta name='viewport' content='width=device-width, initial-scale=1'>
+    <title>Powerwall Combined Bridge</title>
+    <style>
+        :root {{ color-scheme: light; --bg:#f4f7f8; --card:#ffffff; --text:#0f1720; --muted:#4f6473; --border:#d8e1e8; }}
+        body {{ margin:0; font-family: ui-sans-serif, system-ui, sans-serif; background:linear-gradient(180deg, #eef6f8, var(--bg)); color:var(--text); }}
+        main {{ max-width: 1100px; margin: 0 auto; padding: 24px; }}
+        h1 {{ margin-bottom: 6px; }}
+        p.meta {{ color: var(--muted); margin-top: 0; }}
+        .cards {{ display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; margin: 24px 0; }}
+        .card, .panel {{ background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 18px; box-shadow: 0 10px 30px rgba(15, 23, 32, 0.06); }}
+        .card h2 {{ font-size: 0.95rem; color: var(--muted); margin: 0 0 8px; }}
+        .card p {{ font-size: 1.45rem; font-weight: 700; margin: 0; }}
+        .layout {{ display:grid; grid-template-columns: 2fr 1fr; gap: 16px; }}
+        table {{ width:100%; border-collapse: collapse; }}
+        th, td {{ text-align:left; padding: 10px 8px; border-bottom: 1px solid var(--border); }}
+        th {{ color: var(--muted); font-weight: 600; }}
+        code {{ background:#eef3f5; padding:2px 6px; border-radius:6px; }}
+        @media (max-width: 800px) {{ .layout {{ grid-template-columns: 1fr; }} main {{ padding: 16px; }} }}
+    </style>
+</head>
+<body>
+    <main>
+        <h1>Powerwall Combined Bridge</h1>
+        <p class='meta'>JSON API at <code>/status</code>. Health endpoint at <code>/health</code>.</p>
+        <section class='cards'>{card_html}</section>
+        <section class='layout'>
+            <section class='panel'>
+                <h2>Sites</h2>
+                <table>
+                    <thead>
+                        <tr><th>Site</th><th>Solar</th><th>Load</th><th>Battery</th><th>Charge</th><th>Grid</th></tr>
+                    </thead>
+                    <tbody>{rows_html}</tbody>
+                </table>
+            </section>
+            <section class='panel'>
+                <h2>Errors</h2>
+                {errors_html}
+            </section>
+        </section>
+    </main>
+</body>
+</html>
+"""
+
+
 @dataclass
 class SnapshotStore:
     config: dict[str, Any]
@@ -238,7 +336,26 @@ def make_handler(store: SnapshotStore):
                 self.end_headers()
                 return
             payload = store.get_snapshot()
-            body = json.dumps(payload, indent=2).encode("utf-8")
+            if self.path == "/":
+                body = build_status_page(payload).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+
+            if self.path == "/health":
+                body = json.dumps(
+                    {
+                        "status": "ok",
+                        "generated_at": payload.get("generated_at"),
+                        "error_count": len(payload.get("errors") or {}),
+                    },
+                    indent=2,
+                ).encode("utf-8")
+            else:
+                body = json.dumps(payload, indent=2).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))

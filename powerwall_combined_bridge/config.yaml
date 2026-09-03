@@ -1,5 +1,5 @@
 name: Powerwall Combined Bridge
-version: 0.1.4
+version: 0.2.0
 slug: powerwall_combined_bridge
 description: >-
   Combine direct Tesla Powerwall v1r data from House A and House B with an
@@ -16,9 +16,12 @@ ports:
 ports_description:
   8676/tcp: Combined energy JSON endpoint
 watchdog: http://[HOST]:[PORT:8676]/health
-webui: http://[HOST]:[PORT:8676]/status
+webui: http://[HOST]:[PORT:8676]/
 map:
   - addon_config:rw
+  - homeassistant_config:rw
+discovery:
+  - powerwall_combined_bridge
 options:
   server_host: 0.0.0.0
   server_port: 8676
