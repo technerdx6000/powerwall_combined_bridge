@@ -1,66 +1,100 @@
 {
-  "title": "Powerwall Combined Bridge",
-  "config": {
-    "step": {
-      "user": {
-        "title": "Connect to bridge",
-        "description": "Add the Powerwall Combined Bridge endpoint that the integration should poll.",
-        "data": {
-          "resource": "Bridge URL",
-          "scan_interval": "Scan interval (seconds)"
+    "title": "Powerwall Combined Bridge",
+    "config": {
+        "step": {
+            "user": {
+                "title": "Connect to bridge",
+                "description": "Add the Powerwall Combined Bridge endpoint that the integration should poll.",
+                "data": {
+                    "resource": "Bridge URL",
+                    "scan_interval": "Scan interval (seconds)"
+                }
+            },
+            "reconfigure": {
+                "title": "Update bridge connection",
+                "description": "Update the Powerwall Combined Bridge endpoint or polling interval.",
+                "data": {
+                    "resource": "Bridge URL",
+                    "scan_interval": "Scan interval (seconds)"
+                }
+            }
+        },
+        "error": {
+            "cannot_connect": "Failed to connect to the bridge or parse its JSON response.",
+            "unknown": "An unexpected error occurred."
+        },
+        "abort": {
+            "already_configured": "This Powerwall bridge is already configured."
         }
-      },
-      "reconfigure": {
-        "title": "Update bridge connection",
-        "description": "Update the Powerwall Combined Bridge endpoint or polling interval.",
-        "data": {
-          "resource": "Bridge URL",
-          "scan_interval": "Scan interval (seconds)"
+    },
+    "options": {
+        "step": {
+            "init": {
+                "title": "Bridge options",
+                "data": {
+                    "resource": "Bridge URL",
+                    "scan_interval": "Scan interval (seconds)"
+                }
+            }
+        },
+        "error": {
+            "cannot_connect": "Failed to connect to the bridge or parse its JSON response.",
+            "unknown": "An unexpected error occurred."
         }
-      }
     },
-    "error": {
-      "cannot_connect": "Failed to connect to the bridge or parse its JSON response.",
-      "unknown": "An unexpected error occurred."
-    },
-    "abort": {
-      "already_configured": "This Powerwall bridge is already configured."
-    }
-  },
-  "options": {
-    "step": {
-      "init": {
-        "title": "Bridge options",
-        "data": {
-          "resource": "Bridge URL",
-          "scan_interval": "Scan interval (seconds)"
+    "entity": {
+        "sensor": {
+            "combined_solar_power": {
+                "name": "Combined Solar Power"
+            },
+            "combined_home_load": {
+                "name": "Combined Home Load"
+            },
+            "combined_battery_power": {
+                "name": "Combined Battery Power"
+            },
+            "combined_grid_power": {
+                "name": "Combined Grid Power"
+            },
+            "combined_powerwall_site_sum": {
+                "name": "Combined Powerwall Site Sum"
+            },
+            "combined_balance_power": {
+                "name": "Combined Balance Power"
+            },
+            "combined_grid_source": {
+                "name": "Combined Grid Source"
+            },
+            "snapshot_generated_at": {
+                "name": "Snapshot Generated At"
+            },
+            "battery_level_percent": {
+                "name": "Battery Level"
+            },
+            "solar_power": {
+                "name": "Solar Power"
+            },
+            "home_load": {
+                "name": "Home Load"
+            },
+            "battery_power": {
+                "name": "Battery Power"
+            },
+            "site_power": {
+                "name": "Site Power"
+            },
+            "grid_status": {
+                "name": "Grid Status"
+            },
+            "phase_a_power": {
+                "name": "Phase A Power"
+            },
+            "phase_b_power": {
+                "name": "Phase B Power"
+            },
+            "phase_c_power": {
+                "name": "Phase C Power"
+            }
         }
-      }
-    },
-    "error": {
-      "cannot_connect": "Failed to connect to the bridge or parse its JSON response.",
-      "unknown": "An unexpected error occurred."
     }
-  },
-  "entity": {
-    "sensor": {
-      "combined_solar_power": {"name": "Combined Solar Power"},
-      "combined_home_load": {"name": "Combined Home Load"},
-      "combined_battery_power": {"name": "Combined Battery Power"},
-      "combined_grid_power": {"name": "Combined Grid Power"},
-      "combined_powerwall_site_sum": {"name": "Combined Powerwall Site Sum"},
-      "combined_balance_power": {"name": "Combined Balance Power"},
-      "combined_grid_source": {"name": "Combined Grid Source"},
-      "snapshot_generated_at": {"name": "Snapshot Generated At"},
-      "battery_level_percent": {"name": "Battery Level"},
-      "solar_power": {"name": "Solar Power"},
-      "home_load": {"name": "Home Load"},
-      "battery_power": {"name": "Battery Power"},
-      "site_power": {"name": "Site Power"},
-      "grid_status": {"name": "Grid Status"},
-      "phase_a_power": {"name": "Phase A Power"},
-      "phase_b_power": {"name": "Phase B Power"},
-      "phase_c_power": {"name": "Phase C Power"}
-    }
-  }
 }

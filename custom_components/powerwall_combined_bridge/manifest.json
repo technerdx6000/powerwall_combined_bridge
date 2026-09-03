@@ -1,15 +1,15 @@
 {
-  "domain": "powerwall_combined_bridge",
-  "name": "Powerwall Combined Bridge",
-  "codeowners": [
-    "@technerdx6000"
-  ],
-  "config_flow": true,
-  "documentation": "https://github.com/technerdx6000/powerwall_combined_bridge",
-  "integration_type": "hub",
-  "iot_class": "local_polling",
-  "issue_tracker": "https://github.com/technerdx6000/powerwall_combined_bridge/issues",
-  "requirements": [],
-  "single_config_entry": true,
-  "version": "0.1.0"
+    "domain": "powerwall_combined_bridge",
+    "name": "Powerwall Combined Bridge",
+    "codeowners": [
+        "@technerdx6000"
+    ],
+    "config_flow": true,
+    "documentation": "https://github.com/technerdx6000/powerwall_combined_bridge",
+    "integration_type": "hub",
+    "iot_class": "local_polling",
+    "issue_tracker": "https://github.com/technerdx6000/powerwall_combined_bridge/issues",
+    "requirements": [],
+    "single_config_entry": true,
+    "version": "0.1.0"
 }
