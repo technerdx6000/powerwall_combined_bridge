@@ -20,6 +20,15 @@ SUPERVISOR_HTTP = "http://supervisor"
 SUPERVISOR_WS = "ws://supervisor/core/websocket"
 
 
+class WsCommandError(RuntimeError):
+    """Raised when a Home Assistant websocket command fails."""
+
+    def __init__(self, code: str | None, message: str | None) -> None:
+        self.code = code or "unknown"
+        self.message = message or "Unknown websocket error"
+        super().__init__(f"{self.code}: {self.message}")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Ensure the Home Assistant Powerwall Combined Bridge integration is configured.",
@@ -72,7 +81,7 @@ def supervisor_hostname_candidates(port: int) -> list[str]:
         try:
             payload = http_json(f"{SUPERVISOR_HTTP}/addons/self/info", token=token)
             data = payload.get("data", payload)
-            for key in ("hostname", "alias"):
+            for key in ("ip_address", "hostname", "alias", "slug"):
                 value = data.get(key)
                 if isinstance(value, str) and value:
                     candidates.append(f"http://{value}:{port}/status")
@@ -83,6 +92,15 @@ def supervisor_hostname_candidates(port: int) -> list[str]:
                     if isinstance(alias, str) and alias:
                         candidates.append(f"http://{alias}:{port}/status")
                         candidates.append(f"http://{alias.replace('_', '-')}:{port}/status")
+        except Exception:
+            pass
+
+            repository = data.get("repository")
+            slug = data.get("slug")
+            if isinstance(repository, str) and isinstance(slug, str) and repository and slug and "://" not in repository:
+                combined = f"{repository}_{slug}"
+                candidates.append(f"http://{combined}:{port}/status")
+                candidates.append(f"http://{combined.replace('_', '-')}:{port}/status")
         except Exception:
             pass
 
@@ -127,7 +145,7 @@ async def ws_command(websocket, message_id: int, message_type: str, **payload: A
             return response
         if not response.get("success", False):
             error = response.get("error", {})
-            raise RuntimeError(f"Home Assistant websocket error: {error.get('code')}: {error.get('message')}")
+            raise WsCommandError(error.get("code"), error.get("message"))
         return response.get("result")
 
 
@@ -148,13 +166,27 @@ def restart_home_assistant_core(token: str) -> None:
 async def ensure_config_entry(token: str, resource_candidates: list[str], scan_interval: int, timeout: int) -> str:
     websocket = await ws_connect(token, timeout)
     try:
-        flow = await ws_command(
-            websocket,
-            1,
-            "config_entries/flow/init",
-            handler=DOMAIN,
-            context={"source": "user"},
-        )
+        deadline = time.monotonic() + timeout
+        flow = None
+        while time.monotonic() < deadline:
+            try:
+                flow = await ws_command(
+                    websocket,
+                    1,
+                    "config_entries/flow/init",
+                    handler=DOMAIN,
+                    context={"source": "user"},
+                )
+                break
+            except WsCommandError as err:
+                if err.code in {"not_found", "unknown_command", "invalid_format"} or "handler" in err.message.lower():
+                    print(f"Waiting for Home Assistant to load {DOMAIN} config flow: {err}")
+                    await asyncio.sleep(3)
+                    continue
+                raise
+
+        if flow is None:
+            raise TimeoutError(f"Timed out waiting for Home Assistant to load {DOMAIN} config flow")
 
         if flow.get("type") == "abort":
             return f"Config flow aborted: {flow.get('reason')}"
@@ -163,6 +195,7 @@ async def ensure_config_entry(token: str, resource_candidates: list[str], scan_i
 
         flow_id = flow["flow_id"]
         next_id = 2
+        print(f"Trying Home Assistant bridge URL candidates: {resource_candidates}")
         for resource in resource_candidates:
             result = await ws_command(
                 websocket,
@@ -184,6 +217,7 @@ async def ensure_config_entry(token: str, resource_candidates: list[str], scan_i
             if result_type == "form":
                 errors = result.get("errors") or {}
                 if errors.get("base") == "cannot_connect":
+                    print(f"Bridge URL candidate failed: {resource}")
                     continue
                 raise RuntimeError(f"Config flow returned unexpected form errors: {errors}")
             raise RuntimeError(f"Unexpected config flow result: {result}")
