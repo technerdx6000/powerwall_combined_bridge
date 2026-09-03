@@ -18,7 +18,17 @@ The endpoint is served on:
 
 ## RSA key placement
 
-Place your verified private key at:
+`/config` is an internal container path, not something you browse directly in the Home Assistant UI.
+
+This add-on maps the Home Assistant add-on config folder into the container as `/config`.
+
+If you want to provide the key as a file, place your verified private key in the add-on config folder on the Home Assistant host and keep the default option `rsa_key_path: /config/tedapi_rsa_private.pem`.
+
+For GitHub-installed add-ons, the host-side folder is:
+
+- `/addon_configs/<repository_id>_powerwall_combined_bridge/`
+
+For local add-ons, the host-side folder is:
 
 - `/addon_configs/local_powerwall_combined_bridge/tedapi_rsa_private.pem`
 
@@ -27,6 +37,8 @@ Inside the add-on container, this is available at:
 - `/config/tedapi_rsa_private.pem`
 
 The default option `rsa_key_path` already points there.
+
+If you do not want to manage a host-side file, you can instead paste the base64-encoded private key into the add-on option `rsa_private_key_base64`. The add-on will decode it into its persistent `/data` volume automatically at startup and use that copy instead.
 
 ## Default Powerwall mapping
 

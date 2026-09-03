@@ -10,7 +10,10 @@ configuration:
     description: Seconds between refreshes of the combined snapshot.
   rsa_key_path:
     name: RSA key path
-    description: Path to the verified Powerwall v1r RSA private key inside the add-on container.
+    description: Path to the verified Powerwall v1r RSA private key inside the add-on container. Usually leave this as /config/tedapi_rsa_private.pem.
+  rsa_private_key_base64:
+    name: RSA key base64
+    description: Optional. Paste the base64-encoded PEM key here if you do not want to place a file under the add-on config folder.
   powerwalls:
     name: Powerwalls
     description: List of Powerwall hosts and DINs to poll.

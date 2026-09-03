@@ -1,5 +1,5 @@
 name: Powerwall Combined Bridge
-version: 0.1.1
+version: 0.1.2
 slug: powerwall_combined_bridge
 description: >-
   Combine direct Tesla Powerwall v1r data from House A and House B with an
@@ -24,6 +24,7 @@ options:
   server_port: 8676
   refresh_interval: 15
   rsa_key_path: /config/tedapi_rsa_private.pem
+  rsa_private_key_base64: ''
   powerwalls:
     - name: house_a
       host: 192.168.1.68
@@ -42,6 +43,7 @@ schema:
   server_port: port
   refresh_interval: int(5,300)
   rsa_key_path: str
+  rsa_private_key_base64: password?
   powerwalls:
     - name: str
       host: str

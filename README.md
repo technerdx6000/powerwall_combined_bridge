@@ -19,7 +19,19 @@ This avoids needing to manually find and manage the local `/addons` filesystem o
 
 ## HAOS Setup
 
-For the add-on runtime, place the verified RSA private key in the add-on config folder on Home Assistant OS:
+`/config` is the path inside the add-on container. You normally do not access that path directly from the Home Assistant UI.
+
+The add-on maps its Home Assistant add-on config folder into the container as `/config`.
+
+If you want to provide the RSA key as a file, place the verified private key in the add-on config folder on Home Assistant OS.
+
+For GitHub-installed add-ons, that host-side folder will look like:
+
+```text
+/addon_configs/<repository_id>_powerwall_combined_bridge/
+```
+
+For local add-ons, it is:
 
 ```text
 /addon_configs/local_powerwall_combined_bridge/tedapi_rsa_private.pem
@@ -32,6 +44,8 @@ Inside the add-on container this is available as:
 ```
 
 That already matches the add-on default option `rsa_key_path`.
+
+If you do not want to place a file on the host, the add-on also supports an option named `rsa_private_key_base64`. Paste the base64-encoded PEM there and the add-on will decode it into its persistent `/data` volume automatically.
 
 ## Add-on Defaults
 
@@ -180,6 +194,8 @@ For HAOS local add-ons, place the verified RSA key here on the Home Assistant ho
 ```
 
 The add-on maps that folder to `/config` inside the container and defaults `rsa_key_path` to `/config/tedapi_rsa_private.pem`.
+
+For GitHub-installed add-ons, the host-side folder name is not `local_*`; Home Assistant uses a repository-specific identifier under `/addon_configs/`. The container path is still `/config/tedapi_rsa_private.pem`.
 
 After copying the repository into HAOS local add-ons:
 
