@@ -9,6 +9,7 @@ from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, Sen
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory, PERCENTAGE, UnitOfPower
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -39,6 +40,11 @@ def _shelly_value(data: dict[str, Any], path: tuple[str, ...]) -> Any:
             return None
         current = current.get(item)
     return current
+
+
+def _bridge_device_id(hass: HomeAssistant, entry: ConfigEntry) -> str | None:
+    bridge_device = dr.async_get(hass).async_get_device_by_identifier((DOMAIN, entry.entry_id), entry.entry_id)
+    return bridge_device.id if bridge_device is not None else None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -325,15 +331,17 @@ class SiteSensorEntity(PowerwallCombinedBridgeEntity):
     def device_info(self) -> DeviceInfo:
         site = ((self.coordinator.data.get("sites") or {}).get(self._site_key) or {})
         din = site.get("din") or self._site_key
-        return DeviceInfo(
+        info: DeviceInfo = DeviceInfo(
             identifiers={(DOMAIN, f"site_{din}")},
-            via_device=(DOMAIN, self._entry.entry_id),
             name=site.get("site_name") or self._site_key,
             manufacturer="Tesla",
             model=site.get("gateway_part_number") or "Powerwall",
             serial_number=site.get("gateway_serial_number") or din,
             suggested_area=self._site_key.replace("_", " ").title(),
         )
+        if bridge_device_id := _bridge_device_id(self.hass, self._entry):
+            info["via_device_id"] = bridge_device_id
+        return info
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
@@ -381,12 +389,14 @@ class ShellySensorEntity(PowerwallCombinedBridgeEntity):
         summary = shelly.get("summary") or {}
         device = shelly.get("device") or {}
         device_id = summary.get("device_id") or "shelly_em"
-        return DeviceInfo(
+        info: DeviceInfo = DeviceInfo(
             identifiers={(DOMAIN, f"shelly_{device_id}")},
-            via_device=(DOMAIN, self._entry.entry_id),
             name="Shelly Grid Meter",
             manufacturer="Shelly",
             model=summary.get("model") or device.get("model") or "Shelly EM",
             sw_version=summary.get("firmware_version"),
             serial_number=summary.get("device_id"),
         )
+        if bridge_device_id := _bridge_device_id(self.hass, self._entry):
+            info["via_device_id"] = bridge_device_id
+        return info

@@ -1,5 +1,5 @@
 name: Powerwall Combined Bridge
-version: 0.2.10
+version: 0.2.12
 slug: powerwall_combined_bridge
 description: >-
   Combine direct Tesla Powerwall v1r data from House A and House B with an

@@ -195,6 +195,99 @@ def wait_for_config_entry(token: str, entry_id: str, timeout: int) -> dict[str, 
     raise TimeoutError(f"Timed out waiting for Home Assistant config entry {entry_id} to appear")
 
 
+def reload_config_entry(token: str, entry_id: str, timeout: int) -> dict[str, Any]:
+    http_json(
+        f"{SUPERVISOR_HTTP}/core/api/config/config_entries/entry/{entry_id}/reload",
+        method="POST",
+        token=token,
+        data={},
+        timeout=15,
+    )
+    return wait_for_config_entry(token, entry_id, timeout)
+
+
+def finish_reconfigure_flow(
+    token: str,
+    entry: dict[str, Any],
+    resource_candidates: list[str],
+    scan_interval: int,
+    timeout: int,
+) -> str:
+    entry_id = entry.get("entry_id")
+    if not isinstance(entry_id, str) or not entry_id:
+        return f"Existing Home Assistant integration entry has no entry_id: {format_entry_summary(entry)}"
+
+    flow = http_json(
+        f"{SUPERVISOR_HTTP}/core/api/config/config_entries/flow",
+        method="POST",
+        token=token,
+        data={"handler": DOMAIN, "entry_id": entry_id},
+        timeout=15,
+    )
+
+    if flow.get("type") != "form":
+        refreshed = wait_for_config_entry(token, entry_id, timeout)
+        return f"Existing Home Assistant integration entry did not open a reconfigure form: {format_entry_summary(refreshed)}"
+
+    flow_id = flow["flow_id"]
+    print(f"Reconfiguring existing Home Assistant entry with bridge URL candidates: {resource_candidates}", flush=True)
+    for resource in resource_candidates:
+        result = http_json(
+            f"{SUPERVISOR_HTTP}/core/api/config/config_entries/flow/{flow_id}",
+            method="POST",
+            token=token,
+            data={
+                "resource": resource,
+                "scan_interval": scan_interval,
+            },
+            timeout=15,
+        )
+
+        result_type = result.get("type")
+        if result_type == "form":
+            errors = result.get("errors") or {}
+            if errors.get("base") == "cannot_connect":
+                print(f"Bridge URL candidate failed during reconfigure: {resource}", flush=True)
+                continue
+            raise RuntimeError(f"Reconfigure flow returned unexpected form errors: {errors}")
+
+        if result_type in {"abort", "create_entry"}:
+            refreshed = wait_for_config_entry(token, entry_id, timeout)
+            return f"Updated existing Home Assistant integration entry using {resource}: {format_entry_summary(refreshed)}"
+
+        raise RuntimeError(f"Unexpected reconfigure flow result: {result}")
+
+    raise RuntimeError(
+        f"Unable to reconfigure existing Home Assistant integration to any bridge URL candidate: {resource_candidates}"
+    )
+
+
+def reconcile_existing_config_entry(
+    token: str,
+    resource_candidates: list[str],
+    scan_interval: int,
+    timeout: int,
+) -> str:
+    entries = get_domain_config_entries(token)
+    if not entries:
+        return "Config flow aborted: single_instance_allowed, but no existing Home Assistant integration entries were found"
+
+    entry = entries[0]
+    resource = ((entry.get("data") or {}) if isinstance(entry.get("data"), dict) else {}).get("resource")
+    state = str(entry.get("state") or "").lower()
+    preferred_resource = resource_candidates[0] if resource_candidates else None
+
+    if preferred_resource and resource != preferred_resource:
+        return finish_reconfigure_flow(token, entry, resource_candidates, scan_interval, timeout)
+
+    if state != "loaded":
+        refreshed = reload_config_entry(token, str(entry["entry_id"]), timeout)
+        return f"Reloaded existing Home Assistant integration entry: {format_entry_summary(refreshed)}"
+
+    summaries = "; ".join(format_entry_summary(existing) for existing in entries)
+    return f"Home Assistant integration already configured: {summaries}"
+
+
 def restart_home_assistant_core(token: str) -> None:
     request = urllib.request.Request(
         f"{SUPERVISOR_HTTP}/core/restart",
@@ -232,6 +325,8 @@ def ensure_config_entry(token: str, resource_candidates: list[str], scan_interva
     )
 
     if flow.get("type") == "abort":
+        if flow.get("reason") == "single_instance_allowed":
+            return reconcile_existing_config_entry(token, resource_candidates, scan_interval, timeout)
         return f"Config flow aborted: {flow.get('reason')}"
     if flow.get("type") != "form":
         raise RuntimeError(f"Unexpected config flow init result: {flow}")
