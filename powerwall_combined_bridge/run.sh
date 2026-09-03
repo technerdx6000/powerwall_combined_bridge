@@ -6,7 +6,7 @@ bashio::log.info "Installing Home Assistant custom integration payload"
 install_output=$(python3 /opt/powerwall/install_homeassistant_custom_component.py)
 bashio::log.info "$install_output"
 integration_changed=false
-if [[ "$install_output" == Installed* ]]; then
+if [[ "$install_output" == *"Installed custom component to "* ]]; then
   integration_changed=true
   bashio::log.warning "Custom integration files changed. Home Assistant Core will be restarted so the updated integration can load."
 fi

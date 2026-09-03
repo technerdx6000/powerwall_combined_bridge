@@ -10,6 +10,7 @@ from pathlib import Path
 
 DEFAULT_SOURCE = "/opt/powerwall/homeassistant_custom_component/powerwall_combined_bridge"
 DEFAULT_TARGET = "/homeassistant_config/custom_components/powerwall_combined_bridge"
+IGNORED_NAMES = {"__pycache__", ".DS_Store"}
 CONFIG_ROOT_CANDIDATES = (
     Path("/homeassistant"),
     Path("/homeassistant_config"),
@@ -65,10 +66,14 @@ def directories_match(source: Path, target: Path) -> bool:
     if not source.is_dir() or not target.is_dir():
         return False
 
-    comparison = filecmp.dircmp(source, target)
-    if comparison.left_only or comparison.right_only or comparison.funny_files:
+    comparison = filecmp.dircmp(source, target, ignore=list(IGNORED_NAMES))
+    left_only = [name for name in comparison.left_only if name not in IGNORED_NAMES]
+    right_only = [name for name in comparison.right_only if name not in IGNORED_NAMES]
+    funny_files = [name for name in comparison.funny_files if name not in IGNORED_NAMES]
+    diff_files = [name for name in comparison.diff_files if name not in IGNORED_NAMES]
+    if left_only or right_only or funny_files:
         return False
-    if comparison.diff_files:
+    if diff_files:
         return False
 
     return all(directories_match(source / name, target / name) for name in comparison.common_dirs)
@@ -84,7 +89,7 @@ def install_component(source: Path, target: Path) -> bool:
 
     if target.exists():
         shutil.rmtree(target)
-    shutil.copytree(source, target)
+    shutil.copytree(source, target, ignore=shutil.ignore_patterns(*IGNORED_NAMES))
     return True
 
 
