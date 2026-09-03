@@ -1,5 +1,5 @@
 name: Powerwall Combined Bridge
-version: 0.2.2
+version: 0.2.3
 slug: powerwall_combined_bridge
 description: >-
   Combine direct Tesla Powerwall v1r data from House A and House B with an
@@ -22,6 +22,7 @@ map:
   - homeassistant_config:rw
 discovery:
   - powerwall_combined_bridge
+hassio_api: true
 homeassistant_api: true
 options:
   server_host: 0.0.0.0

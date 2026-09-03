@@ -48,7 +48,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--timeout",
         type=int,
-        default=180,
+        default=300,
         help="Seconds to wait for Home Assistant Core and the bridge to become ready",
     )
     return parser.parse_args()
@@ -92,9 +92,6 @@ def supervisor_hostname_candidates(port: int) -> list[str]:
                     if isinstance(alias, str) and alias:
                         candidates.append(f"http://{alias}:{port}/status")
                         candidates.append(f"http://{alias.replace('_', '-')}:{port}/status")
-        except Exception:
-            pass
-
             repository = data.get("repository")
             slug = data.get("slug")
             if isinstance(repository, str) and isinstance(slug, str) and repository and slug and "://" not in repository:
@@ -151,7 +148,7 @@ async def ws_command(websocket, message_id: int, message_type: str, **payload: A
 
 def restart_home_assistant_core(token: str) -> None:
     request = urllib.request.Request(
-        f"{SUPERVISOR_HTTP}/core/api/services/homeassistant/restart",
+        f"{SUPERVISOR_HTTP}/core/restart",
         data=b"{}",
         method="POST",
         headers={
@@ -180,7 +177,7 @@ async def ensure_config_entry(token: str, resource_candidates: list[str], scan_i
                 break
             except WsCommandError as err:
                 if err.code in {"not_found", "unknown_command", "invalid_format"} or "handler" in err.message.lower():
-                    print(f"Waiting for Home Assistant to load {DOMAIN} config flow: {err}")
+                    print(f"Waiting for Home Assistant to load {DOMAIN} config flow: {err}", flush=True)
                     await asyncio.sleep(3)
                     continue
                 raise
@@ -195,7 +192,7 @@ async def ensure_config_entry(token: str, resource_candidates: list[str], scan_i
 
         flow_id = flow["flow_id"]
         next_id = 2
-        print(f"Trying Home Assistant bridge URL candidates: {resource_candidates}")
+        print(f"Trying Home Assistant bridge URL candidates: {resource_candidates}", flush=True)
         for resource in resource_candidates:
             result = await ws_command(
                 websocket,
@@ -217,7 +214,7 @@ async def ensure_config_entry(token: str, resource_candidates: list[str], scan_i
             if result_type == "form":
                 errors = result.get("errors") or {}
                 if errors.get("base") == "cannot_connect":
-                    print(f"Bridge URL candidate failed: {resource}")
+                    print(f"Bridge URL candidate failed: {resource}", flush=True)
                     continue
                 raise RuntimeError(f"Config flow returned unexpected form errors: {errors}")
             raise RuntimeError(f"Unexpected config flow result: {result}")
@@ -236,12 +233,12 @@ async def async_main(args: argparse.Namespace) -> int:
     wait_for_bridge(args.local_bridge_url, args.timeout)
 
     if args.restart_core:
-        print("Restarting Home Assistant Core to load updated custom integration")
+        print("Restarting Home Assistant Core to load updated custom integration", flush=True)
         restart_home_assistant_core(token)
 
     resource_candidates = supervisor_hostname_candidates(args.port)
     result = await ensure_config_entry(token, resource_candidates, args.scan_interval, args.timeout)
-    print(result)
+    print(result, flush=True)
     return 0
 
 
@@ -250,7 +247,7 @@ def main() -> int:
     try:
         return asyncio.run(async_main(args))
     except Exception as err:
-        print(f"Automatic Home Assistant integration setup failed: {err}", file=sys.stderr)
+        print(f"Automatic Home Assistant integration setup failed: {err}", file=sys.stderr, flush=True)
         return 1
 
 
