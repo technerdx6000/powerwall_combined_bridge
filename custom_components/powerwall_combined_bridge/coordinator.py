@@ -54,7 +54,7 @@ def build_entry_title(snapshot: dict[str, Any]) -> str:
         if isinstance(site, dict) and site.get("site_name")
     ]
     if site_names:
-        return " + ".join(site_names)
+        return f"Powerwall Combined Bridge: {' + '.join(site_names)}"
     return "Powerwall Combined Bridge"
 
 

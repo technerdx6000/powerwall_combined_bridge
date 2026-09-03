@@ -19,6 +19,13 @@ SUPERVISOR_HTTP = "http://supervisor"
 SUPERVISOR_WS = "ws://supervisor/core/websocket"
 
 
+def _add_candidate(bucket: list[str], port: int, value: Any) -> None:
+    if not isinstance(value, str) or not value:
+        return
+    bucket.append(f"http://{value}:{port}/status")
+    bucket.append(f"http://{value.replace('_', '-')}:{port}/status")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Ensure the Home Assistant Powerwall Combined Bridge integration is configured.",
@@ -119,31 +126,28 @@ def wait_for_config_flow_handler(token: str, timeout: int) -> None:
 
 def supervisor_hostname_candidates(port: int) -> list[str]:
     token = os.environ.get("SUPERVISOR_TOKEN")
-    candidates: list[str] = []
+    stable_candidates: list[str] = []
+    ip_candidates: list[str] = []
     if token:
         try:
             payload = http_json(f"{SUPERVISOR_HTTP}/addons/self/info", token=token)
             data = payload.get("data", payload)
-            for key in ("ip_address", "hostname", "alias", "slug"):
-                value = data.get(key)
-                if isinstance(value, str) and value:
-                    candidates.append(f"http://{value}:{port}/status")
-                    candidates.append(f"http://{value.replace('_', '-')}:{port}/status")
+            _add_candidate(ip_candidates, port, data.get("ip_address"))
+            for key in ("hostname", "alias", "slug"):
+                _add_candidate(stable_candidates, port, data.get(key))
             aliases = data.get("aliases")
             if isinstance(aliases, list):
                 for alias in aliases:
-                    if isinstance(alias, str) and alias:
-                        candidates.append(f"http://{alias}:{port}/status")
-                        candidates.append(f"http://{alias.replace('_', '-')}:{port}/status")
+                    _add_candidate(stable_candidates, port, alias)
             repository = data.get("repository")
             slug = data.get("slug")
             if isinstance(repository, str) and isinstance(slug, str) and repository and slug and "://" not in repository:
                 combined = f"{repository}_{slug}"
-                candidates.append(f"http://{combined}:{port}/status")
-                candidates.append(f"http://{combined.replace('_', '-')}:{port}/status")
+                _add_candidate(stable_candidates, port, combined)
         except Exception:
             pass
 
+    candidates = [*stable_candidates, *ip_candidates]
     candidates.append(f"http://homeassistant.local:{port}/status")
 
     unique: list[str] = []
@@ -153,6 +157,42 @@ def supervisor_hostname_candidates(port: int) -> list[str]:
             seen.add(candidate)
             unique.append(candidate)
     return unique
+
+
+def get_domain_config_entries(token: str) -> list[dict[str, Any]]:
+    entries = http_json(
+        f"{SUPERVISOR_HTTP}/core/api/config/config_entries/entry?domain={DOMAIN}",
+        token=token,
+        timeout=15,
+    )
+    return [entry for entry in entries if isinstance(entry, dict)] if isinstance(entries, list) else []
+
+
+def format_entry_summary(entry: dict[str, Any]) -> str:
+    title = entry.get("title") or "<untitled>"
+    state = entry.get("state") or "<unknown>"
+    entry_id = entry.get("entry_id") or "<no-entry-id>"
+    source = entry.get("source") or "<unknown-source>"
+    resource = ((entry.get("data") or {}) if isinstance(entry.get("data"), dict) else {}).get("resource")
+    if resource:
+        return f"title={title!r}, state={state}, source={source}, entry_id={entry_id}, resource={resource}"
+    return f"title={title!r}, state={state}, source={source}, entry_id={entry_id}"
+
+
+def wait_for_config_entry(token: str, entry_id: str, timeout: int) -> dict[str, Any]:
+    deadline = time.monotonic() + timeout
+    last_seen: dict[str, Any] | None = None
+    while time.monotonic() < deadline:
+        for entry in get_domain_config_entries(token):
+            if entry.get("entry_id") == entry_id:
+                last_seen = entry
+                state = str(entry.get("state") or "").lower()
+                if state not in {"setup_in_progress", "not_loaded"}:
+                    return entry
+        time.sleep(2)
+    if last_seen is not None:
+        return last_seen
+    raise TimeoutError(f"Timed out waiting for Home Assistant config entry {entry_id} to appear")
 
 
 def restart_home_assistant_core(token: str) -> None:
@@ -212,8 +252,17 @@ def ensure_config_entry(token: str, resource_candidates: list[str], scan_interva
 
         result_type = result.get("type")
         if result_type == "create_entry":
-            return f"Created Home Assistant integration entry using {resource}"
+            created_entry = result.get("result") if isinstance(result.get("result"), dict) else {}
+            entry_id = created_entry.get("entry_id")
+            if isinstance(entry_id, str) and entry_id:
+                entry = wait_for_config_entry(token, entry_id, timeout)
+                return f"Created Home Assistant integration entry using {resource}: {format_entry_summary(entry)}"
+            return f"Created Home Assistant integration entry using {resource}: {format_entry_summary(created_entry)}"
         if result_type == "abort":
+            entries = get_domain_config_entries(token)
+            if entries:
+                summaries = "; ".join(format_entry_summary(entry) for entry in entries)
+                return f"Home Assistant integration already configured ({result.get('reason')}): {summaries}"
             return f"Home Assistant integration already configured ({result.get('reason')})"
         if result_type == "form":
             errors = result.get("errors") or {}
