@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import asyncio
 import http.client
 import json
 import os
@@ -14,21 +13,10 @@ import urllib.error
 import urllib.request
 from typing import Any
 
-import websockets
-
 
 DOMAIN = "powerwall_combined_bridge"
 SUPERVISOR_HTTP = "http://supervisor"
 SUPERVISOR_WS = "ws://supervisor/core/websocket"
-
-
-class WsCommandError(RuntimeError):
-    """Raised when a Home Assistant websocket command fails."""
-
-    def __init__(self, code: str | None, message: str | None) -> None:
-        self.code = code or "unknown"
-        self.message = message or "Unknown websocket error"
-        super().__init__(f"{self.code}: {self.message}")
 
 
 def parse_args() -> argparse.Namespace:
@@ -56,13 +44,22 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def http_json(url: str, *, method: str = "GET", token: str | None = None) -> dict[str, Any]:
-    request = urllib.request.Request(url, method=method)
+def http_json(
+    url: str,
+    *,
+    method: str = "GET",
+    token: str | None = None,
+    data: dict[str, Any] | None = None,
+    timeout: int = 10,
+) -> Any:
+    body = json.dumps(data).encode("utf-8") if data is not None else None
+    request = urllib.request.Request(url, data=body, method=method)
     request.add_header("Content-Type", "application/json")
     if token:
         request.add_header("Authorization", f"Bearer {token}")
-    with urllib.request.urlopen(request, timeout=10) as response:
-        return json.loads(response.read().decode("utf-8"))
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        payload = response.read().decode("utf-8")
+        return json.loads(payload) if payload else {}
 
 
 def wait_for_bridge(url: str, timeout: int) -> None:
@@ -74,6 +71,39 @@ def wait_for_bridge(url: str, timeout: int) -> None:
         except Exception:
             time.sleep(2)
     raise TimeoutError(f"Bridge did not become ready at {url}")
+
+
+def wait_for_homeassistant_api(token: str, timeout: int) -> None:
+    deadline = time.monotonic() + timeout
+    last_error: Exception | None = None
+    while time.monotonic() < deadline:
+        try:
+            http_json(f"{SUPERVISOR_HTTP}/core/api/config", token=token, timeout=5)
+            return
+        except Exception as err:
+            last_error = err
+            time.sleep(2)
+    raise TimeoutError(f"Timed out waiting for Home Assistant HTTP API: {last_error}")
+
+
+def wait_for_config_flow_handler(token: str, timeout: int) -> None:
+    deadline = time.monotonic() + timeout
+    last_error: Exception | None = None
+    while time.monotonic() < deadline:
+        try:
+            handlers = http_json(
+                f"{SUPERVISOR_HTTP}/core/api/config/config_entries/flow_handlers",
+                token=token,
+                timeout=10,
+            )
+            if isinstance(handlers, list) and DOMAIN in handlers:
+                return
+            print(f"Waiting for Home Assistant to load {DOMAIN} config flow; handlers={handlers}", flush=True)
+        except Exception as err:
+            last_error = err
+            print(f"Waiting for Home Assistant to load {DOMAIN} config flow: {err}", flush=True)
+        time.sleep(3)
+    raise TimeoutError(f"Timed out waiting for Home Assistant to load {DOMAIN} config flow: {last_error}")
 
 
 def supervisor_hostname_candidates(port: int) -> list[str]:
@@ -114,40 +144,6 @@ def supervisor_hostname_candidates(port: int) -> list[str]:
     return unique
 
 
-async def ws_connect(token: str, timeout: int):
-    deadline = time.monotonic() + timeout
-    last_error: Exception | None = None
-    while time.monotonic() < deadline:
-        try:
-            websocket = await websockets.connect(SUPERVISOR_WS, open_timeout=10)
-            auth_required = json.loads(await websocket.recv())
-            if auth_required.get("type") != "auth_required":
-                raise RuntimeError(f"Unexpected websocket greeting: {auth_required}")
-            await websocket.send(json.dumps({"type": "auth", "access_token": token}))
-            auth_response = json.loads(await websocket.recv())
-            if auth_response.get("type") != "auth_ok":
-                raise RuntimeError(f"Websocket authentication failed: {auth_response}")
-            return websocket
-        except Exception as err:
-            last_error = err
-            await asyncio.sleep(2)
-    raise TimeoutError(f"Timed out waiting for Home Assistant websocket: {last_error}")
-
-
-async def ws_command(websocket, message_id: int, message_type: str, **payload: Any) -> dict[str, Any]:
-    await websocket.send(json.dumps({"id": message_id, "type": message_type, **payload}))
-    while True:
-        response = json.loads(await websocket.recv())
-        if response.get("id") != message_id:
-            continue
-        if response.get("type") != "result":
-            return response
-        if not response.get("success", False):
-            error = response.get("error", {})
-            raise WsCommandError(error.get("code"), error.get("message"))
-        return response.get("result")
-
-
 def restart_home_assistant_core(token: str) -> None:
     request = urllib.request.Request(
         f"{SUPERVISOR_HTTP}/core/restart",
@@ -172,71 +168,54 @@ def restart_home_assistant_core(token: str) -> None:
         raise
 
 
-async def ensure_config_entry(token: str, resource_candidates: list[str], scan_interval: int, timeout: int) -> str:
-    websocket = await ws_connect(token, timeout)
-    try:
-        deadline = time.monotonic() + timeout
-        flow = None
-        while time.monotonic() < deadline:
-            try:
-                flow = await ws_command(
-                    websocket,
-                    1,
-                    "config_entries/flow/init",
-                    handler=DOMAIN,
-                    context={"source": "user"},
-                )
-                break
-            except WsCommandError as err:
-                if err.code in {"not_found", "unknown_command", "invalid_format"} or "handler" in err.message.lower():
-                    print(f"Waiting for Home Assistant to load {DOMAIN} config flow: {err}", flush=True)
-                    await asyncio.sleep(3)
-                    continue
-                raise
+def ensure_config_entry(token: str, resource_candidates: list[str], scan_interval: int, timeout: int) -> str:
+    wait_for_homeassistant_api(token, timeout)
+    wait_for_config_flow_handler(token, timeout)
 
-        if flow is None:
-            raise TimeoutError(f"Timed out waiting for Home Assistant to load {DOMAIN} config flow")
+    flow = http_json(
+        f"{SUPERVISOR_HTTP}/core/api/config/config_entries/flow",
+        method="POST",
+        token=token,
+        data={"handler": DOMAIN},
+        timeout=15,
+    )
 
-        if flow.get("type") == "abort":
-            return f"Config flow aborted: {flow.get('reason')}"
-        if flow.get("type") != "form":
-            raise RuntimeError(f"Unexpected config flow init result: {flow}")
+    if flow.get("type") == "abort":
+        return f"Config flow aborted: {flow.get('reason')}"
+    if flow.get("type") != "form":
+        raise RuntimeError(f"Unexpected config flow init result: {flow}")
 
-        flow_id = flow["flow_id"]
-        next_id = 2
-        print(f"Trying Home Assistant bridge URL candidates: {resource_candidates}", flush=True)
-        for resource in resource_candidates:
-            result = await ws_command(
-                websocket,
-                next_id,
-                "config_entries/flow/configure",
-                flow_id=flow_id,
-                user_input={
-                    "resource": resource,
-                    "scan_interval": scan_interval,
-                },
-            )
-            next_id += 1
+    flow_id = flow["flow_id"]
+    print(f"Trying Home Assistant bridge URL candidates: {resource_candidates}", flush=True)
+    for resource in resource_candidates:
+        result = http_json(
+            f"{SUPERVISOR_HTTP}/core/api/config/config_entries/flow/{flow_id}",
+            method="POST",
+            token=token,
+            data={
+                "resource": resource,
+                "scan_interval": scan_interval,
+            },
+            timeout=15,
+        )
 
-            result_type = result.get("type")
-            if result_type == "create_entry":
-                return f"Created Home Assistant integration entry using {resource}"
-            if result_type == "abort":
-                return f"Home Assistant integration already configured ({result.get('reason')})"
-            if result_type == "form":
-                errors = result.get("errors") or {}
-                if errors.get("base") == "cannot_connect":
-                    print(f"Bridge URL candidate failed: {resource}", flush=True)
-                    continue
-                raise RuntimeError(f"Config flow returned unexpected form errors: {errors}")
-            raise RuntimeError(f"Unexpected config flow result: {result}")
-    finally:
-        await websocket.close()
+        result_type = result.get("type")
+        if result_type == "create_entry":
+            return f"Created Home Assistant integration entry using {resource}"
+        if result_type == "abort":
+            return f"Home Assistant integration already configured ({result.get('reason')})"
+        if result_type == "form":
+            errors = result.get("errors") or {}
+            if errors.get("base") == "cannot_connect":
+                print(f"Bridge URL candidate failed: {resource}", flush=True)
+                continue
+            raise RuntimeError(f"Config flow returned unexpected form errors: {errors}")
+        raise RuntimeError(f"Unexpected config flow result: {result}")
 
     raise RuntimeError(f"Unable to connect Home Assistant integration to any bridge URL candidate: {resource_candidates}")
 
 
-async def async_main(args: argparse.Namespace) -> int:
+def main_with_args(args: argparse.Namespace) -> int:
     token = os.environ.get("SUPERVISOR_TOKEN")
     if not token:
         print("SUPERVISOR_TOKEN not available; skipping automatic Home Assistant integration setup", file=sys.stderr)
@@ -249,7 +228,7 @@ async def async_main(args: argparse.Namespace) -> int:
         restart_home_assistant_core(token)
 
     resource_candidates = supervisor_hostname_candidates(args.port)
-    result = await ensure_config_entry(token, resource_candidates, args.scan_interval, args.timeout)
+    result = ensure_config_entry(token, resource_candidates, args.scan_interval, args.timeout)
     print(result, flush=True)
     return 0
 
@@ -257,7 +236,7 @@ async def async_main(args: argparse.Namespace) -> int:
 def main() -> int:
     args = parse_args()
     try:
-        return asyncio.run(async_main(args))
+        return main_with_args(args)
     except Exception as err:
         print(f"Automatic Home Assistant integration setup failed: {err}", file=sys.stderr, flush=True)
         return 1

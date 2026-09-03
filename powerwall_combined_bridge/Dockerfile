@@ -21,8 +21,7 @@ RUN \
     && python3 -m venv "${VIRTUAL_ENV}" \
     && "${VIRTUAL_ENV}/bin/pip" install --no-cache-dir --upgrade pip \
     && "${VIRTUAL_ENV}/bin/pip" install --no-cache-dir \
-    pypowerwall==0.17.1 \
-    websockets==15.0.1
+    pypowerwall==0.17.1
 
 COPY run.sh /
 COPY rootfs/ /
