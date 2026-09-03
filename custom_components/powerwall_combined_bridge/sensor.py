@@ -7,16 +7,22 @@ from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorEntityDescription, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import EntityCategory, PERCENTAGE, UnitOfPower
+from homeassistant.const import EntityCategory, PERCENTAGE, STATE_UNAVAILABLE, STATE_UNKNOWN, UnitOfEnergy, UnitOfPower
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
 from . import PowerwallCombinedBridgeConfigEntry
 from .const import DOMAIN
+from .energy import (
+    TOTAL_BATTERY_CHARGE_ENERGY_KEY,
+    TOTAL_BATTERY_DISCHARGE_ENERGY_KEY,
+    TOTAL_SOLAR_ENERGY_KEY,
+)
 
 
 def _totals_value(data: dict[str, Any], key: str) -> Any:
@@ -40,6 +46,33 @@ def _shelly_value(data: dict[str, Any], path: tuple[str, ...]) -> Any:
             return None
         current = current.get(item)
     return current
+
+
+def _derived_total_value(data: dict[str, Any], key: str) -> float:
+    derived = (data.get("derived_energy") or {}) if isinstance(data, dict) else {}
+    totals = derived.get("totals") if isinstance(derived, dict) else {}
+    value = totals.get(key) if isinstance(totals, dict) else None
+    return float(value) if isinstance(value, (int, float)) else 0.0
+
+
+def _derived_site_value(data: dict[str, Any], site_key: str, key: str) -> float:
+    derived = (data.get("derived_energy") or {}) if isinstance(data, dict) else {}
+    sites = derived.get("sites") if isinstance(derived, dict) else {}
+    site = sites.get(site_key) if isinstance(sites, dict) else {}
+    value = site.get(key) if isinstance(site, dict) else None
+    return float(value) if isinstance(value, (int, float)) else 0.0
+
+
+def _combined_battery_level_percent(data: dict[str, Any]) -> float | None:
+    sites = (data.get("sites") or {}) if isinstance(data, dict) else {}
+    levels = [
+        float(site.get("battery_level_percent"))
+        for site in sites.values()
+        if isinstance(site, dict) and isinstance(site.get("battery_level_percent"), (int, float))
+    ]
+    if not levels:
+        return None
+    return sum(levels) / len(levels)
 
 
 def _bridge_device_id(hass: HomeAssistant, entry: ConfigEntry) -> str | None:
@@ -90,6 +123,15 @@ TOTAL_SENSOR_DESCRIPTIONS: tuple[BridgeSensorDescription, ...] = (
         value_fn=lambda data: _totals_value(data, "battery_w"),
     ),
     BridgeSensorDescription(
+        key="combined_battery_level_percent",
+        translation_key="combined_battery_level_percent",
+        name="Combined Battery Level",
+        native_unit_of_measurement=PERCENTAGE,
+        device_class=SensorDeviceClass.BATTERY,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=_combined_battery_level_percent,
+    ),
+    BridgeSensorDescription(
         key="combined_grid_power",
         translation_key="combined_grid_power",
         name="Combined Grid Power",
@@ -131,6 +173,40 @@ TOTAL_SENSOR_DESCRIPTIONS: tuple[BridgeSensorDescription, ...] = (
         device_class=SensorDeviceClass.TIMESTAMP,
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda data: dt_util.parse_datetime(data.get("generated_at")) if isinstance(data, dict) else None,
+    ),
+)
+
+
+TOTAL_ENERGY_SENSOR_DESCRIPTIONS: tuple[BridgeSensorDescription, ...] = (
+    BridgeSensorDescription(
+        key="combined_solar_energy",
+        translation_key="combined_solar_energy",
+        name="Combined Solar Energy",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        suggested_display_precision=3,
+        value_fn=lambda data: _derived_total_value(data, TOTAL_SOLAR_ENERGY_KEY),
+    ),
+    BridgeSensorDescription(
+        key="combined_battery_charge_energy",
+        translation_key="combined_battery_charge_energy",
+        name="Combined Battery Charge Energy",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        suggested_display_precision=3,
+        value_fn=lambda data: _derived_total_value(data, TOTAL_BATTERY_CHARGE_ENERGY_KEY),
+    ),
+    BridgeSensorDescription(
+        key="combined_battery_discharge_energy",
+        translation_key="combined_battery_discharge_energy",
+        name="Combined Battery Discharge Energy",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        suggested_display_precision=3,
+        value_fn=lambda data: _derived_total_value(data, TOTAL_BATTERY_DISCHARGE_ENERGY_KEY),
     ),
 )
 
@@ -198,6 +274,40 @@ SITE_SENSOR_DEFINITIONS: tuple[BridgeSensorDescription, ...] = (
 )
 
 
+SITE_ENERGY_SENSOR_DEFINITIONS: tuple[BridgeSensorDescription, ...] = (
+    BridgeSensorDescription(
+        key="solar_energy",
+        translation_key="solar_energy",
+        name="Solar Energy",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        suggested_display_precision=3,
+        value_fn=lambda data: None,
+    ),
+    BridgeSensorDescription(
+        key="battery_charge_energy",
+        translation_key="battery_charge_energy",
+        name="Battery Charge Energy",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        suggested_display_precision=3,
+        value_fn=lambda data: None,
+    ),
+    BridgeSensorDescription(
+        key="battery_discharge_energy",
+        translation_key="battery_discharge_energy",
+        name="Battery Discharge Energy",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        suggested_display_precision=3,
+        value_fn=lambda data: None,
+    ),
+)
+
+
 SHELLY_SENSOR_DEFINITIONS: tuple[BridgeSensorDescription, ...] = (
     BridgeSensorDescription(
         key="phase_a_power",
@@ -240,12 +350,15 @@ async def async_setup_entry(
     entities: list[SensorEntity] = [
         BridgeSensorEntity(entry, description) for description in TOTAL_SENSOR_DESCRIPTIONS
     ]
+    entities.extend(BridgeEnergySensorEntity(entry, description) for description in TOTAL_ENERGY_SENSOR_DESCRIPTIONS)
 
     for site_key, site in sorted((data.get("sites") or {}).items()):
         if not isinstance(site, dict):
             continue
         for description in SITE_SENSOR_DEFINITIONS:
             entities.append(SiteSensorEntity(entry, site_key, description))
+        for description in SITE_ENERGY_SENSOR_DEFINITIONS:
+            entities.append(SiteEnergySensorEntity(entry, site_key, description))
 
     if isinstance(data.get("shelly"), dict):
         for description in SHELLY_SENSOR_DEFINITIONS:
@@ -295,6 +408,58 @@ class BridgeSensorEntity(PowerwallCombinedBridgeEntity):
         if not isinstance(errors, dict) or not errors:
             return None
         return {"errors": errors}
+
+
+class RestoredEnergySensorEntity(PowerwallCombinedBridgeEntity, RestoreEntity):
+    """Base class for cumulative energy sensors derived from power snapshots."""
+
+    entity_description: BridgeSensorDescription
+
+    def __init__(self, entry: PowerwallCombinedBridgeConfigEntry) -> None:
+        super().__init__(entry)
+        self._restored_offset_kwh = 0.0
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last_state = await self.async_get_last_state()
+        if last_state is None or last_state.state in {STATE_UNKNOWN, STATE_UNAVAILABLE}:
+            return
+        try:
+            self._restored_offset_kwh = float(last_state.state)
+        except ValueError:
+            self._restored_offset_kwh = 0.0
+
+    def _session_native_value(self) -> float:
+        raise NotImplementedError
+
+    @property
+    def native_value(self) -> float:
+        return round(self._restored_offset_kwh + self._session_native_value(), 6)
+
+
+class BridgeEnergySensorEntity(RestoredEnergySensorEntity):
+    """A top-level cumulative energy sensor."""
+
+    entity_description: BridgeSensorDescription
+
+    def __init__(self, entry: PowerwallCombinedBridgeConfigEntry, description: BridgeSensorDescription) -> None:
+        super().__init__(entry)
+        self.entity_description = description
+        self._attr_unique_id = f"{entry.entry_id}_{description.key}"
+
+    def _session_native_value(self) -> float:
+        value = self.entity_description.value_fn(self.coordinator.data)
+        return float(value) if isinstance(value, (int, float)) else 0.0
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={(DOMAIN, self._entry.entry_id)},
+            name=self._entry.title,
+            manufacturer="Tesla / Shelly",
+            model="Powerwall Combined Bridge",
+            entry_type=None,
+        )
 
 
 class SiteSensorEntity(PowerwallCombinedBridgeEntity):
@@ -357,6 +522,43 @@ class SiteSensorEntity(PowerwallCombinedBridgeEntity):
         if self._site_key in errors:
             attrs["bridge_error"] = errors[self._site_key]
         return attrs or None
+
+
+class SiteEnergySensorEntity(RestoredEnergySensorEntity):
+    """A cumulative energy sensor for one Powerwall site."""
+
+    entity_description: BridgeSensorDescription
+
+    def __init__(self, entry: PowerwallCombinedBridgeConfigEntry, site_key: str, description: BridgeSensorDescription) -> None:
+        super().__init__(entry)
+        self.entity_description = description
+        self._site_key = site_key
+        self._attr_unique_id = f"{entry.entry_id}_{site_key}_{description.key}"
+
+    def _session_native_value(self) -> float:
+        if self.entity_description.key == "solar_energy":
+            return _derived_site_value(self.coordinator.data, self._site_key, TOTAL_SOLAR_ENERGY_KEY)
+        if self.entity_description.key == "battery_charge_energy":
+            return _derived_site_value(self.coordinator.data, self._site_key, TOTAL_BATTERY_CHARGE_ENERGY_KEY)
+        if self.entity_description.key == "battery_discharge_energy":
+            return _derived_site_value(self.coordinator.data, self._site_key, TOTAL_BATTERY_DISCHARGE_ENERGY_KEY)
+        return 0.0
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        site = ((self.coordinator.data.get("sites") or {}).get(self._site_key) or {})
+        din = site.get("din") or self._site_key
+        info: DeviceInfo = DeviceInfo(
+            identifiers={(DOMAIN, f"site_{din}")},
+            name=site.get("site_name") or self._site_key,
+            manufacturer="Tesla",
+            model=site.get("gateway_part_number") or "Powerwall",
+            serial_number=site.get("gateway_serial_number") or din,
+            suggested_area=self._site_key.replace("_", " ").title(),
+        )
+        if bridge_device_id := _bridge_device_id(self.hass, self._entry):
+            info["via_device_id"] = bridge_device_id
+        return info
 
 
 class ShellySensorEntity(PowerwallCombinedBridgeEntity):

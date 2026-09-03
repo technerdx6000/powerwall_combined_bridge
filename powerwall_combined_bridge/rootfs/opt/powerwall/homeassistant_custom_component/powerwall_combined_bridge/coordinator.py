@@ -11,6 +11,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .bridge_api import PowerwallCombinedBridgeApiClient, PowerwallCombinedBridgeApiError
 from .const import CONF_SCAN_INTERVAL, DOMAIN, MIN_SCAN_INTERVAL_SECONDS
+from .energy import DerivedEnergyTracker
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -38,10 +39,12 @@ class PowerwallCombinedBridgeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             always_update=True,
         )
         self.api = api
+        self._energy_tracker = DerivedEnergyTracker()
 
     async def _async_update_data(self) -> dict[str, Any]:
         try:
-            return await self.api.async_get_snapshot()
+            snapshot = await self.api.async_get_snapshot()
+            return self._energy_tracker.apply_snapshot(snapshot)
         except PowerwallCombinedBridgeApiError as err:
             raise UpdateFailed(str(err)) from err
 
