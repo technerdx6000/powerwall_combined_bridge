@@ -126,6 +126,20 @@ def current_power_map(site_summary: Any) -> dict[str, Any]:
     return current_power
 
 
+def summary_error_message(site_config: dict[str, Any], summary: Any) -> str:
+    key_path = site_config.get("rsa_key_path", "<unknown>")
+    if not isinstance(summary, dict):
+        return f"ValueError: summary response was empty; check RSA key at {key_path}"
+    if not isinstance(summary.get("current_power_w"), dict):
+        if summary.get("site_name") is None and not summary.get("firmware_version"):
+            return (
+                "ValueError: current_power_w was unavailable; likely wrong or unverified RSA key "
+                f"at {key_path}"
+            )
+        return "ValueError: current_power_w was unavailable; this site contributes 0 W to totals"
+    return ""
+
+
 def combine_snapshot(config: dict[str, Any]) -> dict[str, Any]:
     sites: dict[str, Any] = {}
     errors: dict[str, str] = {}
@@ -147,10 +161,9 @@ def combine_snapshot(config: dict[str, Any]) -> dict[str, Any]:
             )
             summary = fetch_artifact(client, transport, "summary", site_config["din"])
             sites[site_name] = summary
-            if not isinstance(summary, dict):
-                errors[site_name] = "ValueError: summary response was empty"
-            elif not isinstance(summary.get("current_power_w"), dict):
-                errors[site_name] = "ValueError: current_power_w was unavailable; this site contributes 0 W to totals"
+            issue = summary_error_message(site_config, summary)
+            if issue:
+                errors[site_name] = issue
         except Exception as exc:
             errors[site_name] = f"{type(exc).__name__}: {exc}"
 
