@@ -89,6 +89,7 @@ def wait_for_homeassistant_api(token: str, timeout: int) -> None:
 def wait_for_config_flow_handler(token: str, timeout: int) -> None:
     deadline = time.monotonic() + timeout
     last_error: Exception | None = None
+    last_log_at = 0.0
     while time.monotonic() < deadline:
         try:
             handlers = http_json(
@@ -98,10 +99,20 @@ def wait_for_config_flow_handler(token: str, timeout: int) -> None:
             )
             if isinstance(handlers, list) and DOMAIN in handlers:
                 return
-            print(f"Waiting for Home Assistant to load {DOMAIN} config flow; handlers={handlers}", flush=True)
+            now = time.monotonic()
+            if now - last_log_at >= 15:
+                handler_count = len(handlers) if isinstance(handlers, list) else 0
+                print(
+                    f"Waiting for Home Assistant to load {DOMAIN} config flow; {handler_count} handlers currently available",
+                    flush=True,
+                )
+                last_log_at = now
         except Exception as err:
             last_error = err
-            print(f"Waiting for Home Assistant to load {DOMAIN} config flow: {err}", flush=True)
+            now = time.monotonic()
+            if now - last_log_at >= 15:
+                print(f"Waiting for Home Assistant to load {DOMAIN} config flow: {err}", flush=True)
+                last_log_at = now
         time.sleep(3)
     raise TimeoutError(f"Timed out waiting for Home Assistant to load {DOMAIN} config flow: {last_error}")
 
