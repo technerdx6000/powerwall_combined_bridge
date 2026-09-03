@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+
+.pypowerwall-auth/
+tedapi_rsa_private.pem
+tedapi_rsa_public.der
+
+probe-output/
+
+bridge_config.json
+
+powerwall_combined_bridge/*.tar
+powerwall_combined_bridge/.DS_Store

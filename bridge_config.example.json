@@ -1,0 +1,20 @@
+{
+    "powerwalls": {
+        "house_a": {
+            "host": "192.168.1.68",
+            "din": "1707000-30-K--TG124347001PEX",
+            "rsa_key_path": ".pypowerwall-auth/tedapi_rsa_private.pem"
+        },
+        "house_b": {
+            "host": "192.168.1.59",
+            "din": "1707000-30-K--TG1243480014GF",
+            "rsa_key_path": ".pypowerwall-auth/tedapi_rsa_private.pem"
+        }
+    },
+    "shelly": {
+        "enabled": true,
+        "base_url": "http://192.168.1.177",
+        "em_id": 0,
+        "timeout": 10
+    }
+}

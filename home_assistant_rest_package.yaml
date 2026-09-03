@@ -1,0 +1,63 @@
+rest:
+  - resource: http://YOUR_BRIDGE_HOST:8676/status
+    verify_ssl: false
+    scan_interval: 15
+    sensor:
+      - name: Combined Energy Snapshot
+        value_template: "{{ value_json.generated_at }}"
+        json_attributes:
+          - totals
+          - sites
+          - shelly
+          - errors
+
+template:
+  - sensor:
+      - name: Combined Solar Power
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        state: "{{ state_attr('sensor.combined_energy_snapshot', 'totals').solar_w | default(0, true) | round(1) }}"
+      - name: Combined Home Load
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        state: "{{ state_attr('sensor.combined_energy_snapshot', 'totals').home_w | default(0, true) | round(1) }}"
+      - name: Combined Battery Power
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        state: "{{ state_attr('sensor.combined_energy_snapshot', 'totals').battery_w | default(0, true) | round(1) }}"
+      - name: Combined Grid Power
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        state: "{{ state_attr('sensor.combined_energy_snapshot', 'totals').grid_w | default(0, true) | round(1) }}"
+      - name: Combined Grid Source
+        state: "{{ state_attr('sensor.combined_energy_snapshot', 'totals').grid_source }}"
+      - name: House A Battery Level
+        unit_of_measurement: "%"
+        device_class: battery
+        state: "{{ state_attr('sensor.combined_energy_snapshot', 'sites').house_a.battery_level_percent | default(0, true) | round(1) }}"
+      - name: House B Battery Level
+        unit_of_measurement: "%"
+        device_class: battery
+        state: "{{ state_attr('sensor.combined_energy_snapshot', 'sites').house_b.battery_level_percent | default(0, true) | round(1) }}"
+      - name: Shelly Grid Phase A Power
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        state: >-
+          {{ (((state_attr('sensor.combined_energy_snapshot', 'shelly') or {}).get('summary', {})).get('phase_a', {})).get('active_power_w', 0) | round(1) }}
+      - name: Shelly Grid Phase B Power
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        state: >-
+          {{ (((state_attr('sensor.combined_energy_snapshot', 'shelly') or {}).get('summary', {})).get('phase_b', {})).get('active_power_w', 0) | round(1) }}
+      - name: Shelly Grid Phase C Power
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        state: >-
+          {{ (((state_attr('sensor.combined_energy_snapshot', 'shelly') or {}).get('summary', {})).get('phase_c', {})).get('active_power_w', 0) | round(1) }}

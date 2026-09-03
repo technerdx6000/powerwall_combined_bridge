@@ -1,0 +1,47 @@
+configuration:
+  server_host:
+    name: Bind host
+    description: Host address the JSON endpoint should listen on.
+  server_port:
+    name: Bind port
+    description: TCP port used for the JSON endpoint.
+  refresh_interval:
+    name: Refresh interval
+    description: Seconds between refreshes of the combined snapshot.
+  rsa_key_path:
+    name: RSA key path
+    description: Path to the verified Powerwall v1r RSA private key inside the add-on container.
+  powerwalls:
+    name: Powerwalls
+    description: List of Powerwall hosts and DINs to poll.
+    fields:
+      name:
+        name: Name
+        description: Short identifier such as house_a or house_b.
+      host:
+        name: Host
+        description: Local IP address of the Powerwall host.
+      din:
+        name: DIN
+        description: Gateway DIN for the Powerwall site.
+  shelly_enabled:
+    name: Enable Shelly
+    description: Enable polling of a Shelly EM meter for grid-side totals.
+  shelly_base_url:
+    name: Shelly base URL
+    description: Base URL of the Shelly device, for example http://192.168.1.177.
+  shelly_em_id:
+    name: Shelly EM id
+    description: EM component id, usually 0.
+  shelly_auth_type:
+    name: Shelly auth type
+    description: Authentication type for the Shelly RPC endpoint.
+  shelly_username:
+    name: Shelly username
+    description: Username for Shelly RPC access.
+  shelly_password:
+    name: Shelly password
+    description: Password for Shelly RPC access.
+
+network:
+  8676/TCP: Combined energy bridge JSON endpoint
