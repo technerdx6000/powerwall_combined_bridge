@@ -117,6 +117,15 @@ def safe_number(value: Any) -> float:
     return float(value)
 
 
+def current_power_map(site_summary: Any) -> dict[str, Any]:
+    if not isinstance(site_summary, dict):
+        return {}
+    current_power = site_summary.get("current_power_w")
+    if not isinstance(current_power, dict):
+        return {}
+    return current_power
+
+
 def combine_snapshot(config: dict[str, Any]) -> dict[str, Any]:
     sites: dict[str, Any] = {}
     errors: dict[str, str] = {}
@@ -138,6 +147,10 @@ def combine_snapshot(config: dict[str, Any]) -> dict[str, Any]:
             )
             summary = fetch_artifact(client, transport, "summary", site_config["din"])
             sites[site_name] = summary
+            if not isinstance(summary, dict):
+                errors[site_name] = "ValueError: summary response was empty"
+            elif not isinstance(summary.get("current_power_w"), dict):
+                errors[site_name] = "ValueError: current_power_w was unavailable; this site contributes 0 W to totals"
         except Exception as exc:
             errors[site_name] = f"{type(exc).__name__}: {exc}"
 
@@ -150,11 +163,11 @@ def combine_snapshot(config: dict[str, Any]) -> dict[str, Any]:
         except Exception as exc:
             errors["shelly"] = f"{type(exc).__name__}: {exc}"
 
-    house_values = list(sites.values())
-    total_solar = sum(safe_number(item.get("current_power_w", {}).get("SOLAR")) for item in house_values)
-    total_home = sum(safe_number(item.get("current_power_w", {}).get("LOAD")) for item in house_values)
-    total_battery = sum(safe_number(item.get("current_power_w", {}).get("BATTERY")) for item in house_values)
-    total_site_sum = sum(safe_number(item.get("current_power_w", {}).get("SITE")) for item in house_values)
+    house_power_values = [current_power_map(item) for item in sites.values()]
+    total_solar = sum(safe_number(item.get("SOLAR")) for item in house_power_values)
+    total_home = sum(safe_number(item.get("LOAD")) for item in house_power_values)
+    total_battery = sum(safe_number(item.get("BATTERY")) for item in house_power_values)
+    total_site_sum = sum(safe_number(item.get("SITE")) for item in house_power_values)
     grid_w = shelly_summary.get("total_active_power_w") if shelly_summary else total_site_sum
     grid_source = "shelly_em" if shelly_summary else "powerwall_site_sum"
 
