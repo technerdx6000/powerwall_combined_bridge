@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import http.client
 import json
 import os
+import socket
 import sys
 import time
 import urllib.error
@@ -156,8 +158,18 @@ def restart_home_assistant_core(token: str) -> None:
             "Content-Type": "application/json",
         },
     )
-    with urllib.request.urlopen(request, timeout=10):
+    try:
+        with urllib.request.urlopen(request, timeout=5):
+            return
+    except (TimeoutError, socket.timeout, http.client.RemoteDisconnected, ConnectionResetError) as err:
+        print(f"Home Assistant Core restart request interrupted as Core stopped responding: {err}", flush=True)
         return
+    except urllib.error.URLError as err:
+        reason = getattr(err, "reason", None)
+        if isinstance(reason, (TimeoutError, socket.timeout, ConnectionResetError, http.client.RemoteDisconnected)):
+            print(f"Home Assistant Core restart request interrupted as Core stopped responding: {reason}", flush=True)
+            return
+        raise
 
 
 async def ensure_config_entry(token: str, resource_candidates: list[str], scan_interval: int, timeout: int) -> str:
