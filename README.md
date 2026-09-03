@@ -4,6 +4,26 @@ This repository now contains a proper Home Assistant add-on repository for combi
 
 The add-on itself is in `powerwall_combined_bridge/`.
 
+It also now contains an initial Home Assistant custom integration in `custom_components/powerwall_combined_bridge/` that can create native sensor entities from the bridge output without YAML REST or template configuration.
+
+## Custom Integration
+
+The custom integration polls the bridge endpoint and creates native Home Assistant entities for:
+
+- combined solar, home, battery, grid, site-sum, and balance power
+- per-site battery level, solar, load, battery, site power, and grid status
+- optional Shelly phase A/B/C power
+
+Current implementation path:
+
+1. Run the `Powerwall Combined Bridge` add-on so the JSON endpoint is available.
+2. Copy `custom_components/powerwall_combined_bridge/` into your Home Assistant config directory under `custom_components/`.
+3. Restart Home Assistant.
+4. In Home Assistant, go to Devices & Services and add `Powerwall Combined Bridge`.
+5. Enter the bridge URL, for example `http://homeassistant.local:8676/status` or your HA host IP on port `8676`.
+
+This is the first pass of the native integration. The add-on remains the data collection layer; the custom integration consumes that local JSON and turns it into real entities.
+
 ## Recommended Path
 
 If you want to do this properly with Home Assistant OS, the clean path is:
