@@ -5,17 +5,17 @@ ARG BUILD_ARCH
 ARG BUILD_VERSION
 
 LABEL \
-  io.hass.name="Powerwall Combined Bridge" \
-  io.hass.description="Combined Tesla Powerwall v1r and Shelly EM bridge" \
-  io.hass.arch="${BUILD_ARCH}" \
-  io.hass.type="addon" \
-  io.hass.version="${BUILD_VERSION}"
+    io.hass.name="Powerwall Combined Bridge" \
+    io.hass.description="Combined Tesla Powerwall v1r and Shelly EM bridge" \
+    io.hass.arch="${BUILD_ARCH}" \
+    io.hass.type="addon" \
+    io.hass.version="${BUILD_VERSION}"
 
 RUN \
-  apk add --no-cache \
+    apk add --no-cache \
     python3 \
     py3-pip \
-  && pip3 install --no-cache-dir \
+    && pip3 install --no-cache-dir \
     pypowerwall==0.17.1
 
 COPY run.sh /
