@@ -7,8 +7,12 @@ from typing import Any
 SECONDS_PER_HOUR = 3600.0
 
 TOTAL_SOLAR_ENERGY_KEY = "solar_energy_kwh"
+TOTAL_HOME_ENERGY_KEY = "home_energy_kwh"
 TOTAL_BATTERY_CHARGE_ENERGY_KEY = "battery_charge_energy_kwh"
 TOTAL_BATTERY_DISCHARGE_ENERGY_KEY = "battery_discharge_energy_kwh"
+PHASE_A_ENERGY_KEY = "phase_a_energy_kwh"
+PHASE_B_ENERGY_KEY = "phase_b_energy_kwh"
+PHASE_C_ENERGY_KEY = "phase_c_energy_kwh"
 
 
 def _snapshot_timestamp(snapshot: dict[str, Any]) -> datetime | None:
@@ -47,6 +51,23 @@ def _total_power(snapshot: dict[str, Any], key: str) -> float | None:
     return _number(totals.get(key))
 
 
+def _phase_power_from_sites(snapshot: dict[str, Any], phase_index: int) -> float | None:
+    sites = snapshot.get("sites") if isinstance(snapshot, dict) else None
+    if not isinstance(sites, dict):
+        return None
+    site_keys = sorted(sites.keys())
+    if phase_index >= len(site_keys):
+        return None
+    return _site_power(snapshot, site_keys[phase_index], "LOAD")
+
+
+def _phase_power(snapshot: dict[str, Any], totals_key: str, phase_index: int) -> float | None:
+    power = _total_power(snapshot, totals_key)
+    if power is not None:
+        return power
+    return _phase_power_from_sites(snapshot, phase_index)
+
+
 def _positive_power(power_w: float | None) -> float | None:
     if power_w is None:
         return None
@@ -70,8 +91,14 @@ def empty_derived_energy() -> dict[str, Any]:
     return {
         "totals": {
             TOTAL_SOLAR_ENERGY_KEY: 0.0,
+            TOTAL_HOME_ENERGY_KEY: 0.0,
             TOTAL_BATTERY_CHARGE_ENERGY_KEY: 0.0,
             TOTAL_BATTERY_DISCHARGE_ENERGY_KEY: 0.0,
+        },
+        "phases": {
+            PHASE_A_ENERGY_KEY: 0.0,
+            PHASE_B_ENERGY_KEY: 0.0,
+            PHASE_C_ENERGY_KEY: 0.0,
         },
         "sites": {},
     }
@@ -119,6 +146,11 @@ class DerivedEnergyTracker:
             _positive_power(_total_power(snapshot, "solar_w")),
             delta_hours,
         )
+        self._derived_energy["totals"][TOTAL_HOME_ENERGY_KEY] += _integrate_kwh(
+            _positive_power(_total_power(self._previous_snapshot, "home_w")),
+            _positive_power(_total_power(snapshot, "home_w")),
+            delta_hours,
+        )
         self._derived_energy["totals"][TOTAL_BATTERY_CHARGE_ENERGY_KEY] += _integrate_kwh(
             _charging_power(_total_power(self._previous_snapshot, "battery_w")),
             _charging_power(_total_power(snapshot, "battery_w")),
@@ -127,6 +159,21 @@ class DerivedEnergyTracker:
         self._derived_energy["totals"][TOTAL_BATTERY_DISCHARGE_ENERGY_KEY] += _integrate_kwh(
             _positive_power(_total_power(self._previous_snapshot, "battery_w")),
             _positive_power(_total_power(snapshot, "battery_w")),
+            delta_hours,
+        )
+        self._derived_energy["phases"][PHASE_A_ENERGY_KEY] += _integrate_kwh(
+            _positive_power(_phase_power(self._previous_snapshot, "phase_a_w", 0)),
+            _positive_power(_phase_power(snapshot, "phase_a_w", 0)),
+            delta_hours,
+        )
+        self._derived_energy["phases"][PHASE_B_ENERGY_KEY] += _integrate_kwh(
+            _positive_power(_phase_power(self._previous_snapshot, "phase_b_w", 1)),
+            _positive_power(_phase_power(snapshot, "phase_b_w", 1)),
+            delta_hours,
+        )
+        self._derived_energy["phases"][PHASE_C_ENERGY_KEY] += _integrate_kwh(
+            _positive_power(_phase_power(self._previous_snapshot, "phase_c_w", 2)),
+            _positive_power(_phase_power(snapshot, "phase_c_w", 2)),
             delta_hours,
         )
 
@@ -172,6 +219,7 @@ class DerivedEnergyTracker:
             **snapshot,
             "derived_energy": {
                 "totals": dict(self._derived_energy["totals"]),
+                "phases": dict(self._derived_energy["phases"]),
                 "sites": {
                     site_key: dict(values)
                     for site_key, values in self._derived_energy["sites"].items()

@@ -38,8 +38,21 @@ def main() -> int:
             "rsa_key_path": rsa_key_path,
         }
 
+    phase_site_map: dict[str, str] = {}
+    phase_aliases = {
+        "phase_a": ("phase_a", "a", "house_a", "site_a"),
+        "phase_b": ("phase_b", "b", "house_b", "site_b"),
+        "phase_c": ("phase_c", "c", "house_c", "site_c"),
+    }
+    for phase_key, aliases in phase_aliases.items():
+        for alias in aliases:
+            if alias in powerwalls:
+                phase_site_map[phase_key] = alias
+                break
+
     rendered = {
         "powerwalls": powerwalls,
+        "phase_site_map": phase_site_map,
         "shelly": {
             "enabled": options.get("shelly_enabled", False),
             "base_url": options.get("shelly_base_url", ""),

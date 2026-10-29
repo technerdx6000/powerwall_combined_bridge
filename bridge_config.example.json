@@ -11,6 +11,10 @@
             "rsa_key_path": ".pypowerwall-auth/tedapi_rsa_private.pem"
         }
     },
+    "phase_site_map": {
+        "phase_a": "house_a",
+        "phase_b": "house_b"
+    },
     "shelly": {
         "enabled": true,
         "base_url": "http://192.168.1.177",

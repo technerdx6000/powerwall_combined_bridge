@@ -53,6 +53,9 @@
             "combined_home_load": {
                 "name": "Combined Home Load"
             },
+            "combined_home_energy": {
+                "name": "Combined Home Energy"
+            },
             "combined_battery_power": {
                 "name": "Combined Battery Power"
             },
@@ -100,6 +103,15 @@
             },
             "phase_c_power": {
                 "name": "Phase C Power"
+            },
+            "phase_a_energy": {
+                "name": "Phase A Energy"
+            },
+            "phase_b_energy": {
+                "name": "Phase B Energy"
+            },
+            "phase_c_energy": {
+                "name": "Phase C Energy"
             }
         }
     }

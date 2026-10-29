@@ -19,8 +19,12 @@ from homeassistant.util import dt as dt_util
 from . import PowerwallCombinedBridgeConfigEntry
 from .const import DOMAIN
 from .energy import (
+    PHASE_A_ENERGY_KEY,
+    PHASE_B_ENERGY_KEY,
+    PHASE_C_ENERGY_KEY,
     TOTAL_BATTERY_CHARGE_ENERGY_KEY,
     TOTAL_BATTERY_DISCHARGE_ENERGY_KEY,
+    TOTAL_HOME_ENERGY_KEY,
     TOTAL_SOLAR_ENERGY_KEY,
 )
 
@@ -60,6 +64,13 @@ def _derived_site_value(data: dict[str, Any], site_key: str, key: str) -> float:
     sites = derived.get("sites") if isinstance(derived, dict) else {}
     site = sites.get(site_key) if isinstance(sites, dict) else {}
     value = site.get(key) if isinstance(site, dict) else None
+    return float(value) if isinstance(value, (int, float)) else 0.0
+
+
+def _derived_phase_value(data: dict[str, Any], key: str) -> float:
+    derived = (data.get("derived_energy") or {}) if isinstance(data, dict) else {}
+    phases = derived.get("phases") if isinstance(derived, dict) else {}
+    value = phases.get(key) if isinstance(phases, dict) else None
     return float(value) if isinstance(value, (int, float)) else 0.0
 
 
@@ -178,6 +189,16 @@ TOTAL_SENSOR_DESCRIPTIONS: tuple[BridgeSensorDescription, ...] = (
 
 
 TOTAL_ENERGY_SENSOR_DESCRIPTIONS: tuple[BridgeSensorDescription, ...] = (
+    BridgeSensorDescription(
+        key="combined_home_energy",
+        translation_key="combined_home_energy",
+        name="Combined Home Energy",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        suggested_display_precision=3,
+        value_fn=lambda data: _derived_total_value(data, TOTAL_HOME_ENERGY_KEY),
+    ),
     BridgeSensorDescription(
         key="combined_solar_energy",
         translation_key="combined_solar_energy",
@@ -339,6 +360,40 @@ SHELLY_SENSOR_DEFINITIONS: tuple[BridgeSensorDescription, ...] = (
 )
 
 
+PHASE_ENERGY_SENSOR_DEFINITIONS: tuple[BridgeSensorDescription, ...] = (
+    BridgeSensorDescription(
+        key="phase_a_energy",
+        translation_key="phase_a_energy",
+        name="Phase A Energy",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        suggested_display_precision=3,
+        value_fn=lambda data: None,
+    ),
+    BridgeSensorDescription(
+        key="phase_b_energy",
+        translation_key="phase_b_energy",
+        name="Phase B Energy",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        suggested_display_precision=3,
+        value_fn=lambda data: None,
+    ),
+    BridgeSensorDescription(
+        key="phase_c_energy",
+        translation_key="phase_c_energy",
+        name="Phase C Energy",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        suggested_display_precision=3,
+        value_fn=lambda data: None,
+    ),
+)
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: PowerwallCombinedBridgeConfigEntry,
@@ -363,6 +418,9 @@ async def async_setup_entry(
     if isinstance(data.get("shelly"), dict):
         for description in SHELLY_SENSOR_DEFINITIONS:
             entities.append(ShellySensorEntity(entry, description))
+
+    for description in PHASE_ENERGY_SENSOR_DEFINITIONS:
+        entities.append(PhaseEnergySensorEntity(entry, description))
 
     async_add_entities(entities)
 
@@ -602,3 +660,33 @@ class ShellySensorEntity(PowerwallCombinedBridgeEntity):
         if bridge_device_id := _bridge_device_id(self.hass, self._entry):
             info["via_device_id"] = bridge_device_id
         return info
+
+
+class PhaseEnergySensorEntity(RestoredEnergySensorEntity):
+    """Cumulative phase energy sensors derived from bridge phase totals."""
+
+    entity_description: BridgeSensorDescription
+
+    def __init__(self, entry: PowerwallCombinedBridgeConfigEntry, description: BridgeSensorDescription) -> None:
+        super().__init__(entry)
+        self.entity_description = description
+        self._attr_unique_id = f"{entry.entry_id}_{description.key}"
+
+    def _session_native_value(self) -> float:
+        if self.entity_description.key == "phase_a_energy":
+            return _derived_phase_value(self.coordinator.data, PHASE_A_ENERGY_KEY)
+        if self.entity_description.key == "phase_b_energy":
+            return _derived_phase_value(self.coordinator.data, PHASE_B_ENERGY_KEY)
+        if self.entity_description.key == "phase_c_energy":
+            return _derived_phase_value(self.coordinator.data, PHASE_C_ENERGY_KEY)
+        return 0.0
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={(DOMAIN, self._entry.entry_id)},
+            name=self._entry.title,
+            manufacturer="Tesla",
+            model="Powerwall Combined Bridge",
+            entry_type=None,
+        )

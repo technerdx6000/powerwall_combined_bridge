@@ -123,6 +123,44 @@ def current_power_map(site_summary: Any) -> dict[str, Any]:
     return current_power
 
 
+def resolve_phase_site_map(config: dict[str, Any], sites: dict[str, Any]) -> dict[str, str]:
+    resolved: dict[str, str] = {}
+    remaining = set(sites.keys())
+
+    configured = config.get("phase_site_map")
+    if isinstance(configured, dict):
+        for phase in ("phase_a", "phase_b", "phase_c"):
+            site_key = configured.get(phase)
+            if isinstance(site_key, str) and site_key in remaining:
+                resolved[phase] = site_key
+                remaining.remove(site_key)
+
+    alias_map = {
+        "phase_a": ("phase_a", "a", "house_a", "site_a"),
+        "phase_b": ("phase_b", "b", "house_b", "site_b"),
+        "phase_c": ("phase_c", "c", "house_c", "site_c"),
+    }
+    for phase, aliases in alias_map.items():
+        if phase in resolved:
+            continue
+        for alias in aliases:
+            if alias in remaining:
+                resolved[phase] = alias
+                remaining.remove(alias)
+                break
+
+    for phase in ("phase_a", "phase_b", "phase_c"):
+        if phase in resolved:
+            continue
+        if not remaining:
+            break
+        next_site = sorted(remaining)[0]
+        resolved[phase] = next_site
+        remaining.remove(next_site)
+
+    return resolved
+
+
 def summary_error_message(site_config: dict[str, Any], summary: Any) -> str:
     key_path = site_config.get("rsa_key_path", "<unknown>")
     if not isinstance(summary, dict):
@@ -178,6 +216,14 @@ def combine_snapshot(config: dict[str, Any]) -> dict[str, Any]:
     total_home = sum(safe_number(item.get("LOAD")) for item in house_power_values)
     total_battery = sum(safe_number(item.get("BATTERY")) for item in house_power_values)
     total_site_sum = sum(safe_number(item.get("SITE")) for item in house_power_values)
+    phase_site_map = resolve_phase_site_map(config, sites)
+
+    def phase_load_w(phase_key: str) -> float | None:
+        site_key = phase_site_map.get(phase_key)
+        if site_key is None:
+            return None
+        return safe_number(current_power_map(sites.get(site_key)).get("LOAD"))
+
     grid_w = shelly_summary.get("total_active_power_w") if shelly_summary else total_site_sum
     grid_source = "shelly_em" if shelly_summary else "powerwall_site_sum"
 
@@ -185,8 +231,12 @@ def combine_snapshot(config: dict[str, Any]) -> dict[str, Any]:
         "solar_w": total_solar,
         "home_w": total_home,
         "battery_w": total_battery,
+        "phase_a_w": phase_load_w("phase_a"),
+        "phase_b_w": phase_load_w("phase_b"),
+        "phase_c_w": phase_load_w("phase_c"),
         "grid_w": grid_w,
         "grid_source": grid_source,
+        "phase_site_map": phase_site_map,
         "powerwall_site_sum_w": total_site_sum,
         "balance_w": total_solar + total_battery + safe_number(grid_w) - total_home,
     }
