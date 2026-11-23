@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import math
 import threading
 import time
 import urllib.parse
@@ -173,6 +174,130 @@ def summary_error_message(site_config: dict[str, Any], summary: Any) -> str:
             )
         return "ValueError: current_power_w was unavailable; this site contributes 0 W to totals"
     return ""
+
+
+def _site_password(site_config: dict[str, Any]) -> str:
+    return site_config.get("password") or default_password()
+
+
+def make_site_clients(site_config: dict[str, Any]) -> tuple[Any, TEDAPIv1r]:
+    password = _site_password(site_config)
+    rsa_key_path = site_config.get("rsa_key_path", "/config/tedapi_rsa_private.pem")
+    transport = TEDAPIv1r(
+        host=site_config["host"],
+        password=password,
+        rsa_key_path=rsa_key_path,
+        timeout=int(site_config.get("timeout", 10)),
+    )
+    client = make_seeded_client(
+        site_config["host"],
+        site_config["din"],
+        rsa_key_path,
+        password,
+    )
+    return client, transport
+
+
+def _as_finite_float(name: str, value: Any) -> float:
+    if isinstance(value, bool):
+        raise ValueError(f"{name} must be numeric")
+    try:
+        number = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be numeric") from exc
+    if not math.isfinite(number):
+        raise ValueError(f"{name} must be finite")
+    return number
+
+
+def _as_positive_int(name: str, value: Any) -> int:
+    if isinstance(value, bool):
+        raise ValueError(f"{name} must be a positive integer")
+    try:
+        number = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be a positive integer") from exc
+    if number <= 0:
+        raise ValueError(f"{name} must be a positive integer")
+    return number
+
+
+def execute_site_action(site_name: str, site_config: dict[str, Any], action: str, payload: dict[str, Any]) -> dict[str, Any]:
+    client, transport = make_site_clients(site_config)
+    din = site_config["din"]
+
+    if action == "set_mode":
+        mode = payload.get("mode")
+        if not isinstance(mode, str) or not mode:
+            raise ValueError("mode must be a non-empty string")
+        result = client.set_mode(mode)
+    elif action == "set_operation":
+        mode = payload.get("mode")
+        reserve = payload.get("reserve_percent")
+        if mode is None and reserve is None:
+            raise ValueError("set_operation requires mode and/or reserve_percent")
+        mode_value = mode if isinstance(mode, str) and mode else None
+        if mode is not None and mode_value is None:
+            raise ValueError("mode must be a non-empty string")
+        reserve_value = _as_finite_float("reserve_percent", reserve) if reserve is not None else None
+        result = client.set_operation(level=reserve_value, mode=mode_value)
+    elif action == "set_reserve":
+        reserve = _as_finite_float("reserve_percent", payload.get("reserve_percent"))
+        result = client.set_reserve(reserve)
+    elif action == "dispatch_power":
+        power_watts = _as_finite_float("power_watts", payload.get("power_watts"))
+        duration_seconds = _as_positive_int("duration_seconds", payload.get("duration_seconds"))
+        result = client.dispatch_battery_power(power_watts, duration_seconds)
+    elif action == "resume_operation":
+        result = client.resume_battery_operation()
+    else:
+        raise ValueError(f"Unsupported control action: {action}")
+
+    summary = fetch_artifact(client, transport, "summary", din)
+    response: dict[str, Any] = {
+        "site": site_name,
+        "action": action,
+        "result": result,
+    }
+    if isinstance(summary, dict):
+        response["current_power_w"] = summary.get("current_power_w")
+        response["default_real_mode"] = summary.get("default_real_mode")
+        response["backup_reserve_percent"] = summary.get("backup_reserve_percent")
+    return response
+
+
+def execute_control(config: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    action = payload.get("action")
+    if not isinstance(action, str) or not action:
+        raise ValueError("action must be a non-empty string")
+
+    powerwalls = config.get("powerwalls")
+    if not isinstance(powerwalls, dict) or not powerwalls:
+        raise ValueError("No configured powerwalls")
+
+    site = payload.get("site")
+    if site is None or site == "all":
+        target_sites = sorted(powerwalls.keys())
+    elif isinstance(site, str) and site in powerwalls:
+        target_sites = [site]
+    else:
+        raise ValueError("site must be 'all' or a configured site key")
+
+    results: dict[str, Any] = {}
+    errors: dict[str, str] = {}
+    for site_name in target_sites:
+        try:
+            results[site_name] = execute_site_action(site_name, powerwalls[site_name], action, payload)
+        except Exception as exc:
+            errors[site_name] = f"{type(exc).__name__}: {exc}"
+
+    return {
+        "ok": not errors,
+        "action": action,
+        "site": site if site is not None else "all",
+        "results": results,
+        "errors": errors,
+    }
 
 
 def combine_snapshot(config: dict[str, Any]) -> dict[str, Any]:
@@ -376,6 +501,14 @@ class SnapshotStore:
 
 def make_handler(store: SnapshotStore):
     class Handler(BaseHTTPRequestHandler):
+        def _write_json(self, status: int, payload: dict[str, Any]) -> None:
+            body = json.dumps(payload, indent=2).encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
         def do_GET(self) -> None:
             if self.path not in {"/", "/status", "/health"}:
                 self.send_response(404)
@@ -407,6 +540,29 @@ def make_handler(store: SnapshotStore):
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+
+        def do_POST(self) -> None:
+            if self.path != "/control":
+                self.send_response(404)
+                self.end_headers()
+                return
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                raw_body = self.rfile.read(length)
+                payload = json.loads(raw_body.decode("utf-8"))
+                if not isinstance(payload, dict):
+                    raise ValueError("Request body must be a JSON object")
+                result = execute_control(store.config, payload)
+                store.refresh()
+            except ValueError as exc:
+                self._write_json(400, {"ok": False, "error": str(exc)})
+                return
+            except Exception as exc:
+                self._write_json(500, {"ok": False, "error": f"{type(exc).__name__}: {exc}"})
+                return
+
+            status = 200 if result.get("ok") else 207
+            self._write_json(status, result)
 
         def log_message(self, format: str, *args: Any) -> None:
             return

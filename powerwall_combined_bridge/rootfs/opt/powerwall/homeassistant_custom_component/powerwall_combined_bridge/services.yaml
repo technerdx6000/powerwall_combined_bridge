@@ -1,0 +1,107 @@
+set_mode:
+  name: Set Powerwall Mode
+  description: Set Powerwall operating mode for one site or all configured sites.
+  fields:
+    entry_id:
+      required: false
+      selector:
+        text:
+    site:
+      required: false
+      description: Site key from bridge config, or omit for all sites.
+      selector:
+        text:
+    mode:
+      required: true
+      description: Powerwall mode, for example self_consumption, autonomous, or backup.
+      selector:
+        text:
+
+set_operation:
+  name: Set Powerwall Operation
+  description: Set reserve and/or mode in a single operation call.
+  fields:
+    entry_id:
+      required: false
+      selector:
+        text:
+    site:
+      required: false
+      description: Site key from bridge config, or omit for all sites.
+      selector:
+        text:
+    mode:
+      required: false
+      selector:
+        text:
+    reserve_percent:
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+
+set_reserve:
+  name: Set Backup Reserve
+  description: Set backup reserve percentage for one site or all sites.
+  fields:
+    entry_id:
+      required: false
+      selector:
+        text:
+    site:
+      required: false
+      description: Site key from bridge config, or omit for all sites.
+      selector:
+        text:
+    reserve_percent:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+
+dispatch_power:
+  name: Dispatch Battery Power
+  description: Temporarily force battery charge or discharge power.
+  fields:
+    entry_id:
+      required: false
+      selector:
+        text:
+    site:
+      required: false
+      description: Site key from bridge config, or omit for all sites.
+      selector:
+        text:
+    power_watts:
+      required: true
+      description: Positive discharges battery, negative charges battery.
+      selector:
+        number:
+          min: -20000
+          max: 20000
+          step: 100
+    duration_seconds:
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 86400
+          step: 1
+
+resume_operation:
+  name: Resume Normal Operation
+  description: End active manual dispatch and return to configured operating mode.
+  fields:
+    entry_id:
+      required: false
+      selector:
+        text:
+    site:
+      required: false
+      description: Site key from bridge config, or omit for all sites.
+      selector:
+        text:
