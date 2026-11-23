@@ -5,7 +5,6 @@ from dataclasses import dataclass
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
@@ -35,7 +34,7 @@ def _resolve_entry(hass: HomeAssistant, entry_id: str | None) -> PowerwallCombin
     entries = [
         entry
         for entry in hass.config_entries.async_entries(DOMAIN)
-        if entry.state is ConfigEntryState.LOADED and getattr(entry, "runtime_data", None) is not None
+        if getattr(entry, "runtime_data", None) is not None
     ]
     if entry_id is not None:
         for entry in entries:

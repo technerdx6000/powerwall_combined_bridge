@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from powerwall_v1r_direct import default_password, fetch_artifact, make_seeded_client
+from pypowerwall import Powerwall
 from pypowerwall.tedapi.tedapi_v1r import TEDAPIv1r
 
 
@@ -180,22 +181,31 @@ def _site_password(site_config: dict[str, Any]) -> str:
     return site_config.get("password") or default_password()
 
 
-def make_site_clients(site_config: dict[str, Any]) -> tuple[Any, TEDAPIv1r]:
+def make_site_clients(site_config: dict[str, Any]) -> tuple[Any, Any, TEDAPIv1r]:
     password = _site_password(site_config)
     rsa_key_path = site_config.get("rsa_key_path", "/config/tedapi_rsa_private.pem")
+    control_client = Powerwall(
+        host=site_config["host"],
+        password=password,
+        gw_pwd="unused-direct-v1r",
+        rsa_key_path=rsa_key_path,
+        timeout=int(site_config.get("timeout", 10)),
+        cloudmode=False,
+        fleetapi=False,
+    )
     transport = TEDAPIv1r(
         host=site_config["host"],
         password=password,
         rsa_key_path=rsa_key_path,
         timeout=int(site_config.get("timeout", 10)),
     )
-    client = make_seeded_client(
+    summary_client = make_seeded_client(
         site_config["host"],
         site_config["din"],
         rsa_key_path,
         password,
     )
-    return client, transport
+    return control_client, summary_client, transport
 
 
 def _as_finite_float(name: str, value: Any) -> float:
@@ -223,14 +233,14 @@ def _as_positive_int(name: str, value: Any) -> int:
 
 
 def execute_site_action(site_name: str, site_config: dict[str, Any], action: str, payload: dict[str, Any]) -> dict[str, Any]:
-    client, transport = make_site_clients(site_config)
+    control_client, summary_client, transport = make_site_clients(site_config)
     din = site_config["din"]
 
     if action == "set_mode":
         mode = payload.get("mode")
         if not isinstance(mode, str) or not mode:
             raise ValueError("mode must be a non-empty string")
-        result = client.set_mode(mode)
+        result = control_client.set_mode(mode)
     elif action == "set_operation":
         mode = payload.get("mode")
         reserve = payload.get("reserve_percent")
@@ -240,20 +250,20 @@ def execute_site_action(site_name: str, site_config: dict[str, Any], action: str
         if mode is not None and mode_value is None:
             raise ValueError("mode must be a non-empty string")
         reserve_value = _as_finite_float("reserve_percent", reserve) if reserve is not None else None
-        result = client.set_operation(level=reserve_value, mode=mode_value)
+        result = control_client.set_operation(level=reserve_value, mode=mode_value)
     elif action == "set_reserve":
         reserve = _as_finite_float("reserve_percent", payload.get("reserve_percent"))
-        result = client.set_reserve(reserve)
+        result = control_client.set_reserve(reserve)
     elif action == "dispatch_power":
         power_watts = _as_finite_float("power_watts", payload.get("power_watts"))
         duration_seconds = _as_positive_int("duration_seconds", payload.get("duration_seconds"))
-        result = client.dispatch_battery_power(power_watts, duration_seconds)
+        result = control_client.dispatch_battery_power(power_watts, duration_seconds)
     elif action == "resume_operation":
-        result = client.resume_battery_operation()
+        result = control_client.resume_battery_operation()
     else:
         raise ValueError(f"Unsupported control action: {action}")
 
-    summary = fetch_artifact(client, transport, "summary", din)
+    summary = fetch_artifact(summary_client, transport, "summary", din)
     response: dict[str, Any] = {
         "site": site_name,
         "action": action,
